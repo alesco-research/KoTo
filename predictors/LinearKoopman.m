@@ -22,8 +22,22 @@ classdef LinearKoopman < KoopmanBase
     end
 
     methods
-        function obj = LinearKoopman(varargin)
-            obj@KoopmanBase(varargin{:});
+        function obj = LinearKoopman(Y, Z, U, options)
+            arguments
+                Y (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric};
+                U (:,:) {mustBeNumeric};
+                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
+            end
+            [nz, nu] = deal(size(Z, 1), size(U, 1));
+
+            Phi = [Z; U];
+            Theta = (Y * Phi') / (Phi * Phi' + options.gamma * eye(nz + nu));
+
+            obj.stateDim = nz;
+            obj.inputDim = nu;
+            obj.A = Theta(:, 1:nz);
+            obj.B = Theta(:, nz + 1:end);
         end
 
         function y = predict(obj, z, u)
@@ -44,25 +58,6 @@ classdef LinearKoopman < KoopmanBase
             fprintf( ...
                 "Linear:\t ||A||_F = %.4e,   ||B||_F = %.4e\n", normA, normB ...
             );
-        end
-    end
-
-    methods (Hidden, Access=protected)   
-        function learn_(obj, Y, Z, U, options)
-            arguments
-                obj (1,1) LinearKoopman;
-                Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                U (:,:) {mustBeNumeric};
-                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
-            end
-            [nz, nu] = deal(size(Z, 1), size(U, 1));
-
-            Phi = [Z; U];
-            Theta = (Y * Phi') / (Phi * Phi' + options.gamma * eye(nz + nu));
-
-            obj.A = Theta(:, 1:nz);
-            obj.B = Theta(:, nz + 1:end);
         end
     end
 end

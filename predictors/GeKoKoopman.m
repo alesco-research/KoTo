@@ -21,8 +21,17 @@ classdef GeKoKoopman < KoopmanBase
     end
 
     methods
-        function obj = GeKoKoopman(varargin)
-            obj@KoopmanBase(varargin{:});
+        function obj = GeKoKoopman(Y, Z, V, options)
+            arguments
+                Y (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric};
+                V (:,:) {mustBeNumeric};
+                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
+            end
+            [obj.stateDim, obj.inputDim] = deal(size(Z, 1), size(V, 1));
+
+            Phi = KoopmanBase.columnKron(Z, V);
+            obj.K = (Y * Phi') / (Phi * Phi' + options.gamma * eye(size(Phi, 1)));
         end
 
         function y = predict(obj, z, v)
@@ -40,20 +49,6 @@ classdef GeKoKoopman < KoopmanBase
             end
             normK = norm(obj.K, "fro");
             fprintf("Geko:\t ||K||_F = %.4e\n", normK);
-        end
-    end
-
-    methods (Hidden, Access=protected)
-        function learn_(obj, Y, Z, V, options)
-            arguments
-                obj (1,1) GeKoKoopman;
-                Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                V (:,:) {mustBeNumeric};
-                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
-            end
-            Phi = KoopmanBase.columnKron(Z, V);
-            obj.K = (Y * Phi') / (Phi * Phi' + options.gamma * eye(size(Phi, 1)));
         end
     end
 end

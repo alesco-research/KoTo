@@ -27,8 +27,34 @@ classdef KCFKoopman < KoopmanBase
     end
 
     methods
-        function obj = KCFKoopman(varargin)
-            obj@KoopmanBase(varargin{:});
+        function obj = KCFKoopman(Y, Z, V, options)
+            arguments
+                Y (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric};
+                V (:,:) {mustBeNumeric};
+                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
+                options.couplingIdxs (1,:) {mustBeInteger, mustBePositive} = 1:size(Z, 1);
+            end
+            nz = size(Z, 1);
+            ci = options.couplingIdxs;
+            if max(ci) > nz
+                error( ...
+                    "Koopman:InvalidCoupleIdx", ...
+                    "coupleIdx max (%d) exceeds lift dimension %d.", ...
+                    max(ci), nz ...
+                )
+            end
+            [obj.stateDim, obj.inputDim] = deal(size(Z, 1), size(V, 1));
+
+            % Drop constant inputs below threshold variance
+            obj.vKeep = var(V, 0, 2) > 1E-10;
+
+            Phi   = [Z; KoopmanBase.columnKron(V(obj.vKeep, :), Z(ci, :))];
+            Theta = (Y * Phi') / (Phi * Phi' + options.gamma * eye(size(Phi, 1)));
+
+            obj.A11 = Theta(:, 1:nz);
+            obj.A12 = Theta(:, nz + 1:end);
+            obj.couplingIdxs = ci;
         end
 
         function y = predict(obj, z, v)
@@ -50,37 +76,6 @@ classdef KCFKoopman < KoopmanBase
                 "KCF:\t ||A11||_F = %.4e, ||A12||_F = %.4e\n", ...
                 normA11, normA12 ...
             );
-        end
-    end
-
-    methods (Hidden, Access=protected)
-        function learn_(obj, Y, Z, V, options)
-            arguments
-                obj (1,1) KCFKoopman;
-                Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                V (:,:) {mustBeNumeric};
-                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
-                options.couplingIdxs (1,:) {mustBeInteger, mustBePositive} = 1:size(Z, 1);
-            end
-            nz = size(Z, 1);
-            ci = options.couplingIdxs;
-            if max(ci) > nz
-                error( ...
-                    "Koopman:InvalidCoupleIdx", ...
-                    "coupleIdx max (%d) exceeds lift dimension %d.", ...
-                    max(ci), nz ...
-                )
-            end
-            % Drop constant inputs below threshold variance
-            obj.vKeep = var(V, 0, 2) > 1E-10;
-
-            Phi   = [Z; KoopmanBase.columnKron(V(obj.vKeep, :), Z(ci, :))];
-            Theta = (Y * Phi') / (Phi * Phi' + options.gamma * eye(size(Phi, 1)));
-
-            obj.A11 = Theta(:, 1:nz);
-            obj.A12 = Theta(:, nz + 1:end);
-            obj.couplingIdxs = ci;
         end
     end
 end
