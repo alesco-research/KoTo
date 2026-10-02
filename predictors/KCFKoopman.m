@@ -63,7 +63,7 @@ classdef KCFKoopman < KoopmanBase
                 z (:,:) {KoopmanBase.mustMatchStateDim(obj, z)};
                 v (:,:) {KoopmanBase.mustMatchInputDim(obj, v)};
             end
-            y = obj.A11 * z + obj.A12 * KoopmanBase.columnKron(v(obj.vKeep, :), z(obj.coupleIdx, :));
+            y = obj.A11 * z + obj.A12 * KoopmanBase.columnKron(v(obj.vKeep, :), z(obj.couplingIdxs, :));
         end
 
         function [normA11, normA12] = getOperatorNorm(obj)

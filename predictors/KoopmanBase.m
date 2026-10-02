@@ -33,7 +33,7 @@ classdef (Abstract) KoopmanBase < handle
     methods (Sealed)
         function Z = rollout(obj, z0, w)
             arguments
-                obj (1,1) LinearKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) KoopmanBase {KoopmanBase.mustBeFitted(obj)};
                 z0 (:,:) {KoopmanBase.mustMatchStateDim(obj, z0)};
                 w (:,:) {KoopmanBase.mustMatchInputDim(obj, w)};
             end

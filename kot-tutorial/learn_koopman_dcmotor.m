@@ -485,7 +485,7 @@ for m = 1:n_models
     fprintf('   %-14s multi-step: %6.3fs   one-step: %6.3fs\n', ...
         models{m,1}, fit_times_ms(m), fit_times_1s(m));
 end
-return
+
 %% =========================================================
 %  SECTION 7 : OPERATOR-NORM DIAGNOSTICS
 %
@@ -623,7 +623,7 @@ for i = 1:N_test
     end
     fprintf('\n');
 end
-
+return
 %% =========================================================
 %  SECTION 8b : KCF coupling sweep (informational)
 %

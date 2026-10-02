@@ -43,7 +43,7 @@ savePath = fullfile( ...
 );
 
 %% Sample tcLab
-fprintf('\n[1] Generating training trajectories...\n');
+fprintf("\n[1] Generating training trajectories...\n");
 XTrajs = cell(nuberOfTrajectorySamples,1);
 UTrajs = cell(nuberOfTrajectorySamples,1);
 
@@ -70,13 +70,13 @@ X = cell2mat(cellfun(@(x) x(:, 1:end-1), XTrajs, UniformOutput=false)');
 U = cell2mat(UTrajs');
 
 fprintf( ...
-    '\tNumber of trajectories: %d, total number of samples: %d\n', ...
+    "\tNumber of trajectories: %d, total number of samples: %d\n", ...
     nuberOfTrajectorySamples, ...
     size(X, 2) ...
 );
 
 %% Lift data
-fprintf('\n[2] Lifting training data...\n');
+fprintf("\n[2] Lifting training data...\n");
 centers = [];
 if any(kernelType == ["rbf", "rq", "matern"])
     [~, centers] = kmeans(X', numberOfCenters, MaxIter=300, Replicates=3);
@@ -95,15 +95,16 @@ Z = cell2mat(cellfun(@(z) z(:, 1:end-1), ZTrajs, UniformOutput=false)');
 V = cell2mat(VTrajs');
 
 reprojectionError = stateLifting.fitProjection(X, gamma=1e-4);
-fprintf('\tReprojection Error: %.4f\n', reprojectionError);
+fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 
 %% Fit Koopman controllers
-fprintf('\n[3] Fit Koopman controllers...\n');
+fprintf("\n[3] Fit Koopman controllers...\n");
 [Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrajs, UTrajs, VTrajs);
 
-linearPredictor = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
-bilinearPredictor = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
-geKoPredictor = GeKoKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-4);
+predictors = cell(4, 1);
+predictors{1} = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
+predictors{2} = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
+predictors{3} = GeKoKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-4);
 
 if kernelType == "poly"
     % Get polynominal coupling
@@ -114,7 +115,7 @@ else
         [~, ordering] = sort(var(Z(1 + stateLifting.dim:end, :), 0, 2), "descend");
         kcfOrdering = [1, 2, 3, 3 + ordering];
     else
-        [~, kcfOrdering] = sort(var(Z, 0, 2), 'descend');
+        [~, kcfOrdering] = sort(var(Z, 0, 2), "descend");
     end
     effectiveInputs = sum(var(V, 0, 2) > 1E-10);
     numberOfCouplings = round((kcfCouplingRatio - 1) * stateLifting.featureDim / effectiveInputs);
@@ -122,20 +123,70 @@ else
     kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
 end
 
-kcfPredictor = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
+predictors{4} = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
 
 %% Evaluate operator norms
-linearPredictor.getOperatorNorm();
-bilinearPredictor.getOperatorNorm();
-geKoPredictor.getOperatorNorm();
-kcfPredictor.getOperatorNorm();
+fprintf("\t%s", evalc("predictors{1}.getOperatorNorm();"))
+fprintf("\t%s", evalc("predictors{2}.getOperatorNorm();"))
+fprintf("\t%s", evalc("predictors{3}.getOperatorNorm();"))
+fprintf("\t%s", evalc("predictors{4}.getOperatorNorm();"))
+
+%% Evaluate prediction error
+fprintf("\n[4] Evaluating prediction error...\n");
+testHorizon = 300;
+numberOfTestRuns = 10;
+testInitialState = [276; 343];
+
+testTime = (0:testHorizon - 1) * tcLab.Ts;
+testFrequencies = [100, 125, 257, 90];
+testPhases = 2 * pi * rand(1, numel(testFrequencies));
+testInput = [
+        1 + sum(sin(testFrequencies .* testTime' + testPhases), 2)';
+        1 + sum(sin(testFrequencies .* testTime' + testPhases), 2)'
+] * 0.25;
+testInput = clip(testInput, 0, 1);
+
+testInitialStates = [
+    testInitialState, xRange(:, 1) + diff(xRange, 1, 2) .* rand(2, numberOfTestRuns - 1);
+];
+
+predictorNames = ["Linear"; "Bilinear"; "GeKo"; "KCF"];
+testInputScaled = inputScaling.scale(testInput);
+testInputLifted = inputLifting.lift(testInputScaled);
+testInputs = {testInputScaled, testInputScaled, testInputLifted, testInputLifted};
+
+meanStateErrors = zeros(numberOfTestRuns, numel(predictors));
+for i = 1:numberOfTestRuns
+    testStates = tcLab.simulate(testInitialStates(:, i), testInput);
+    
+    testStatesScaled = stateScaling.scale(testStates);
+    trueLiftedStates = stateLifting.lift(testStatesScaled);
+
+    for j = 1:numel(predictors)
+        predictedLiftedStates = predictors{j}.rollout( ...
+            trueLiftedStates(:, 1), testInputs{j} ...
+        );
+        predictedStates = stateLifting.project(predictedLiftedStates);
+        stateErrors = sqrt(sum((predictedStates - testStatesScaled).^2, 1));
+        meanStateErrors(i, j) = mean(stateErrors);
+    end
+end
+
+fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
+fprintf("  %12s", predictorNames);
+fprintf("\n");
+for i = 1:numberOfTestRuns
+    fprintf("\t%-3d", i);
+    fprintf("  %12.4e", meanStateErrors(i, :));
+    fprintf("\n");
+end
 
 %% Save trained models
-fprintf('\n[10] Saving trained models...\n');
+fprintf("\n[10] Saving trained models...\n");
 save(savePath, ...
     "tcLab", ...
     "stateScaling", "inputScaling", ...
     "stateLifting", "inputLifting", ...
-    "linearPredictor", "bilinearPredictor", "geKoPredictor", "kcfPredictor" ...
+    "predictors" ...
 );
-fprintf('\tSaved to %s\n', savePath);
+fprintf("\tSaved to %s\n", savePath);
