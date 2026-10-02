@@ -52,3 +52,5 @@ codegen/
 /tcLab*.mat
 */tcLab*.mat
 /data/
+/koopman_dcmotor_model_*.mat
+*/koopman_dcmotor_model_*.mat

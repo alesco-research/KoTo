@@ -181,6 +181,7 @@ for i = 1:numberOfTestRuns
     fprintf("\n");
 end
 
+
 %% Save trained models
 fprintf("\n[10] Saving trained models...\n");
 save(savePath, ...

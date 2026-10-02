@@ -623,7 +623,7 @@ for i = 1:N_test
     end
     fprintf('\n');
 end
-return
+
 %% =========================================================
 %  SECTION 8b : KCF coupling sweep (informational)
 %
