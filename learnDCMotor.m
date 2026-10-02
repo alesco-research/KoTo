@@ -217,6 +217,12 @@ labelFontSize = 10;
 legendFontSize = 10;
 markers = {'o', 's', '^', 'd'};
 markerIndices = unique(round(linspace(1, numel(testTime), 12)));
+colorscheme = [
+    0.00 0.45 0.74;
+    0.00 0.60 0.20;
+    0.85 0.10 0.10;
+    0.75 0.00 0.75
+];
 
 figure(Name="Feature-space Rollout Error"), hold on, grid on
 h = plot( ...
@@ -228,6 +234,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
+colororder(colorscheme)
 if export
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
@@ -248,6 +255,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
+colororder(colorscheme)
 if export
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
@@ -261,6 +269,7 @@ end
 figure(Name="State Trajectories")
 subplot(2, 1, 1), hold on, grid on
 plot(testTime, squeeze(testStates(1, 1, :)), "k-", LineWidth=2.5)
+set(gca, "ColorOrderIndex", 1); colororder(colorscheme)
 h = plot( ...
     testTime, squeeze(predictedStates(1, 1, :, :)), ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
@@ -271,6 +280,7 @@ legend(["True"; predictorNames], Location="best", Interpreter="latex")
 
 subplot(2, 1, 2), hold on, grid on
 plot(testTime, squeeze(testStates(1, 2, :)), "k-", LineWidth=2.5)
+set(gca, "ColorOrderIndex", 1); colororder(colorscheme)
 h = plot( ...
     testTime, squeeze(predictedStates(1, 2, :, :)), ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
@@ -291,6 +301,7 @@ end
 
 figure(Name="Phase Portrait"), hold on, grid on
 plot(squeeze(testStates(1, 1, :)), squeeze(testStates(1, 2, :)), "k-", LineWidth=2.5)
+set(gca, "ColorOrderIndex", 1); colororder(colorscheme)
 for i = 1:numel(predictors)
     plot(squeeze(predictedStates(1, 1, :, i)), squeeze(predictedStates(1, 2, :, i)), ...
         LineWidth=1.5, MarkerSize=5, Marker=markers{i}, MarkerIndices=markerIndices);
