@@ -1,65 +1,81 @@
-function [Yout, Zout, Wout] = getMultiStepWindows(Z, W, horizon, maxNumberOfWindows, options)
+function [Yout, Zout, Wout] = getMultiStepWindows(Z, W, options)
     %GETMULTISTEPWINDOWS Select representative multi-step windows from trajectories.
-    %   [Y, Z, W] = getMultiStepWindows(Z, W, horizon, maxNumberOfWindows)
-    %   [Y, Z, W] = getMultiStepWindows(___, maxNumberOfRawWindows=N)
+    %   [Y, Z, W1, ..., WN] = getMultiStepWindows(Z, W1, ..., WN)
+    %   [___] = getMultiStepWindows(___, horizon=H, maxNumberOfWindows=K, ...
+    %                               maxNumberOfRawWindows=R)
     %
-    %   Extracts all windows of length HORIZON from the trajectories,
-    %   picks representative ones via k-means on the stacked
-    %   [start; mid; end] states, and returns their one-step pairs.
+    %   Extracts all windows of HORIZON steps, clusters them with k-means on
+    %   the stacked [start; mid; end] states, keeps the window closest to
+    %   each cluster center, and returns the one-step pairs of those windows.
     %
     %   Inputs:
-    %     Z, W  Cell vectors, one entry per trajectory. Z{i} is n-by-(T_i+1),
-    %           W{i} is m-by-T_i.
-    %     horizon              Window length in steps. Must be shorter than
-    %                          at least one trajectory, else error
-    %                          Koopman:HorizonTooLong.
-    %     maxNumberOfWindows   Max. number of windows / k-means clusters
-    %                          (default: 800).
+    %     Z   Cell vector, one entry per trajectory. Z{i} is n-by-(T_i+1).
+    %     Wj  (Repeating, zero or more.) Cell vector like Z. Wj is
+    %         mj-by-T_i.
     %
     %   Name-Value Arguments:
+    %     horizon                Window length in steps (default: 20). Must
+    %                            be smaller than T_i for at least one i.
+    %     maxNumberOfWindows     Max. number of windows, equal to the number
+    %                            of k-means clusters (default: 800).
     %     maxNumberOfRawWindows  Random subsample of candidate windows taken
     %                            before clustering (default: no limit).
     %
     %   Outputs:
-    %     Yout, Zout, Wout  Matrices with K*horizon columns, K <= maxNumberOfWindows
-    %                       (duplicates are removed). Yout(:,j) is the
-    %                       successor of Zout(:,j) under Wout(:,j); columns
-    %                       are ordered window by window.
+    %     Yout  n-by-(K*horizon) successor states.
+    %     Zout  n-by-(K*horizon) current states.
+    %     Wout  (Repeating, one per Wj.) mj-by-(K*horizon) inputs.
     %
-    %   Note: Random result. Requires Statistics and Machine Learning Toolbox.
+    %     K <= maxNumberOfWindows (duplicates are removed). Yout(:,t) is the
+    %     successor of Zout(:,t) under Wout{j}(:,t) Rows are ordered
+    %     window by window, each in chronological order.
+    %
+    %   Note: Random result; set rng for reproducibility. Requires the
+    %   Statistics and Machine Learning Toolbox.
     %
     %   See also getOneStepPairs, kmeans, dsearchn.
-    arguments
+    arguments (Input)
         Z (:,:) cell {mustBeVector};
-        W (:,:) cell {mustBeVector};
-        horizon (1,1) {mustBeInteger, mustBePositive};
-        maxNumberOfWindows (1,1) {mustBeInteger, mustBePositive} = 800;
+    end
+    arguments (Input, Repeating)
+        W (:,:) cell {mustBeVector, mustBeEqualSize(Z, W)};
+    end
+    arguments (Input)
+        options.horizon (1,1) {mustBeInteger, mustBePositive} = 20;
+        options.maxNumberOfWindows (1,1) {mustBeInteger, mustBePositive} = 800;
         options.maxNumberOfRawWindows (1,1) {mustBeInteger, mustBePositive} = uint64(inf);
     end
-    [ZStack, WStack] = deal([Z{:}], [W{:}]);
-    steps = cellfun(@(uv) size(uv,2), W);
+    arguments (Output)
+        Yout (:,:)
+        Zout (:,:)
+    end
+    arguments (Output, Repeating)
+        Wout (:,:)
+    end
+    ZStack = [Z{:}];
+    WStack = cellfun(@(w) [w{:}], W, UniformOutput=false);
+    steps = cellfun(@(z) size(z, 2) - 1, Z(:)');
 
     % Define index mapping
-    inputOffsets = [0, cumsum(steps(:)')];
-    stateOffsets = inputOffsets + (0:numel(W));
-    windowOffsets = [0 cumsum(max(0, steps(:)' - horizon))];
+    inputOffsets = [0, cumsum(steps)];
+    stateOffsets = inputOffsets + (0:numel(Z));
+    windowOffsets = [0 cumsum(max(0, steps - options.horizon))]; % + 1
     if windowOffsets(end) == 0
         error( ...
-            "Koopman:HorizonTooLong", ...
             "The provided horizon %d is longer than the " + ...
             "longest trajectory %d.", ...
-            horizon, max(steps(:)) ...
+            options.horizon, max(steps) ...
         )
     end
     
     stateIdxs = NaN(windowOffsets(end), 1);
     inputIdxs = NaN(windowOffsets(end), 1);
-    for i = 1:numel(W)
-        wIdx = 1 : steps(i) - horizon;
+    for i = 1:numel(Z)
+        wIdx = 1 : steps(i) - options.horizon; % + 1
         stateIdxs(windowOffsets(i) + wIdx) = stateOffsets(i) + wIdx;
         inputIdxs(windowOffsets(i) + wIdx) = inputOffsets(i) + wIdx;
     end
-    
+
     % Limit number of raw windows
     if windowOffsets(end) > options.maxNumberOfRawWindows
         keep = randperm( ...
@@ -70,23 +86,34 @@ function [Yout, Zout, Wout] = getMultiStepWindows(Z, W, horizon, maxNumberOfWind
     end
 
     % Find expressive windows using kmeans
-    numClusters = min(maxNumberOfWindows, numel(stateIdxs));
-    startMidEnd = [ ...
-        ZStack(:, stateIdxs); ... % start
-        ZStack(:, stateIdxs + round(horizon / 2)); ... % mid
-        ZStack(:, stateIdxs + horizon) ... % end
-    ];
-    [~, centers] = kmeans( ...
-        startMidEnd', numClusters, MaxIter=200, Replicates=3 ...
-    );
-    selectedWindows = unique(dsearchn(startMidEnd', centers))';
+    selectedWindows = (1:numel(stateIdxs));
+    if options.maxNumberOfWindows < numel(stateIdxs)
+        startMidEnd = [ ...
+            ZStack(:, stateIdxs); ... % start
+            ZStack(:, stateIdxs + round(options.horizon / 2)); ... % mid
+            ZStack(:, stateIdxs + options.horizon) ... % end
+        ];
+        [~, centers] = kmeans( ...
+            startMidEnd', options.maxNumberOfWindows, MaxIter=200, Replicates=3 ...
+        );
+        selectedWindows = unique(dsearchn(startMidEnd', centers))';
+    end
 
     % Return selected pairs
-    k = (0:horizon - 1);
+    k = (0:options.horizon - 1);
     zIdxs = stateIdxs(selectedWindows) + k; % numClusters x horizon
     wIdxs = inputIdxs(selectedWindows) + k; % numClusters x horizon
-
-    Wout = WStack(:, wIdxs(:));
-    Zout = ZStack(:, zIdxs(:));
+   
     Yout = ZStack(:, zIdxs(:) + 1);
+    Zout = ZStack(:, zIdxs(:));
+    Wout = cellfun(@(ws) ws(:, wIdxs(:)), WStack, UniformOutput=false);
+end
+
+function mustBeEqualSize(Z, W)
+    if numel(W) ~= numel(Z)
+        error("Z and W must have the same number of trajectories.");
+    end
+    if ~all(cellfun(@(z, w) size(z, 2) - 1 == size(w, 2), Z(:), W(:)))
+        error("Z and W must have trajectories of matching length.");
+    end
 end

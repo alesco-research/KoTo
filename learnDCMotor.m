@@ -29,9 +29,9 @@ inputLifting = ChebyshevLift(8);
 
 switch "multi"
     case "one"
-        getPairs = @(Z, W) getOneStepPairs(Z, W, 20*800);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 20*800);
     case "multi"
-        getPairs = @(Z, W) getMultiStepWindows(Z, W, 20, 800, maxNumberOfRawWindows=6000);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=800, maxNumberOfRawWindows=6000);
 end
 
 % KCF coupling paremeters
@@ -96,10 +96,7 @@ fprintf('\tReprojection Error: %.4f\n', reprojectionError);
 
 %% Fit Koopman controllers
 fprintf('\n[3] Fit Koopman controllers...\n');
-
-s = rng;
-[~, ~, Upairs] = getPairs(ZTrajs, UTrajs); rng(s);
-[Ypairs, Zpairs, Vpairs] = getPairs(ZTrajs, VTrajs);
+[Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrajs, UTrajs, VTrajs);
 
 linearPredictor = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
 bilinearPredictor = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
@@ -122,16 +119,18 @@ else
     kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
 end
 
-kcfPredictor = KCFKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-4);
+kcfPredictor = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
 
-all(linearPredictor.A == M_ms{1}.A, "all")
-all(linearPredictor.B == M_ms{1}.B, "all")
-all(bilinearPredictor.A == M_ms{2}.A, "all")
-all(bilinearPredictor.B == M_ms{2}.B, "all")
-all(bilinearPredictor.N == M_ms{2}.N, "all")
-all(geKoPredictor.K == M_ms{3}.K, "all")
-all(kcfPredictor.A11 == M_ms{4}.A11, "all")
-all(kcfPredictor.A12 == M_ms{4}.A12, "all")
+all([
+    all(linearPredictor.A == M_ms{1}.A, "all");
+    all(linearPredictor.B == M_ms{1}.B, "all");
+    all(bilinearPredictor.A == M_ms{2}.A, "all");
+    all(bilinearPredictor.B == M_ms{2}.B, "all");
+    all(bilinearPredictor.N == M_ms{2}.N, "all");
+    all(geKoPredictor.K == M_ms{3}.K, "all");
+    all(kcfPredictor.A11 == M_ms{4}.A11, "all");
+    all(kcfPredictor.A12 == M_ms{4}.A12, "all");
+])
 
 %% Evaluate operator norms
 linearPredictor.getOperatorNorm();
