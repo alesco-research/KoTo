@@ -11,7 +11,7 @@ This repository holds the MATLAB code for the tutorial paper: *"A TCLab tutorial
 
 ## Installation
 
-1. Clone this repository or download the code as a ZIP archive and extract it to a folder of your choice.
+1. Fork this repository or download the code as a ZIP archive and extract it to a folder of your choice.
 
 2. To initalize the workspace run the following script
 
