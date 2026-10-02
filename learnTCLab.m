@@ -27,10 +27,12 @@ switch kernelType
 end
 inputLifting = PolynomialLift(tcLab.inputDim, 5);
 
-predictorArgs = { ...
-    "horizon", 20, "maxNumberOfWindows", 800, "maxNumberOfRawWindows", 6000 ...
-    % "useMultiStepWindows", false, "maxNumberOfPairs", 20*800 ...
-};
+switch "multi"
+    case "one"
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 20*800);
+    case "multi"
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=800, maxNumberOfRawWindows=6000);
+end
 
 % KCF coupling paremeters
 kcfCouplingDegree = 2;  % <= polynomial lift degree
@@ -97,15 +99,11 @@ fprintf('\tReprojection Error: %.4f\n', reprojectionError);
 
 %% Fit Koopman controllers
 fprintf('\n[3] Fit Koopman controllers...\n');
-linearPredictor = LinearKoopman(predictorArgs{:});
-bilinearPredictor = BilinearKoopman(predictorArgs{:});
-geKoPredictor = GeKoKoopman(predictorArgs{:});
-kcfPredictor = KCFKoopman(predictorArgs{:});
+[Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrajs, UTrajs, VTrajs);
 
-s = rng;
-linearPredictor.learn(ZTrajs, UTrajs, gamma=1E-4); rng(s);
-bilinearPredictor.learn(ZTrajs, UTrajs, gamma=1E-4); rng(s);
-geKoPredictor.learn(ZTrajs, VTrajs, gamma=1E-4); rng(s);
+linearPredictor = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
+bilinearPredictor = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
+geKoPredictor = GeKoKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-4);
 
 if kernelType == "poly"
     % Get polynominal coupling
@@ -124,7 +122,7 @@ else
     kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
 end
 
-kcfPredictor.learn(ZTrajs, VTrajs, gamma=1E-4, couplingIdxs=kcfCouplingIdxs);
+kcfPredictor = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
 
 %% Evaluate operator norms
 linearPredictor.getOperatorNorm();
