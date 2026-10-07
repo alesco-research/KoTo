@@ -61,7 +61,7 @@ classdef KCFKoopman < KoopmanBase
             arguments
                 obj (1,1) KCFKoopman {KoopmanBase.mustBeFitted(obj)};
                 z (:,:) {KoopmanBase.mustMatchStateDim(obj, z)};
-                v (:,:) {KoopmanBase.mustMatchInputDim(obj, v)};
+                v (:,:) {KCFKoopman.mustBeValidInput(obj, v)};
             end
             y = obj.A11 * z + obj.A12 * KoopmanBase.columnKron(v(obj.vKeep, :), z(obj.couplingIdxs, :));
         end
@@ -76,6 +76,22 @@ classdef KCFKoopman < KoopmanBase
                 "KCF:\t ||A11||_F = %.4e, ||A12||_F = %.4e\n", ...
                 normA11, normA12 ...
             );
+        end
+    end
+
+    methods (Static, Hidden, Access=protected)
+        function mustBeValidInput(obj, v)
+            KoopmanBase.mustMatchInputDim(obj, v)
+            constantInputs = var(v(~obj.vKeep,:), 0, 2) <= 1E-10;
+            if ~all(constantInputs)
+                constantIdxs = find(~obj.vKeep);
+                error( ...
+                    "Koopman:InvalidInput", ...
+                    "Input lifting(s) %s were constant during " + ...
+                    "training but vary in the supplied data.", ...
+                    mat2str(constantIdxs(~constantInputs)) ...
+                )
+            end
         end
     end
 end
