@@ -1,5 +1,6 @@
 %% Learn Koopman Operator for a TC-Lab
 clc, clearvars, close all;
+initWorkspace;
 
 %% Set parameters
 rng(42); % for reproducibility
@@ -187,7 +188,7 @@ end
 
 %% Plot
 fprintf("\n[5] Plotting...\n");
-export = true;
+export = false;
 margin = 0;
 width = 12;
 height = 8;
@@ -296,11 +297,13 @@ if export
 end
 
 %% Save trained models
-fprintf("\n[6] Saving trained models...\n");
-save(savePath, ...
-    "tcLab", ...
-    "stateScaling", "inputScaling", ...
-    "stateLifting", "inputLifting", ...
-    "predictors" ...
-);
-fprintf("\tSaved to %s\n", savePath);
+if export
+    fprintf("\n[6] Saving trained models...\n");
+    save(savePath, ...
+        "tcLab", ...
+        "stateScaling", "inputScaling", ...
+        "stateLifting", "inputLifting", ...
+        "predictors" ...
+    );
+    fprintf("\tSaved to %s\n", savePath);
+end

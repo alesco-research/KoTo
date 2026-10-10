@@ -1,5 +1,6 @@
 %% Learn Koopman Operator for a TC-Lab
 clc, clearvars, close all;
+initWorkspace;
 
 %% Set parameters
 rng(42); % for reproducibility
@@ -40,8 +41,8 @@ kcfCouplingRatio = 2;   % > 1
 scriptDir = fileparts(mfilename("fullpath"));
 dataDir = fullfile(scriptDir, "data");
 
-trainPath = fullfile(dataDir, "TCLabTrain.mat");
-testPath = fullfile(dataDir, "TCLabTest.mat");
+trainPath = fullfile(dataDir, "TCLabTrain1.mat");
+testPath = fullfile(dataDir, "TCLabTest1.mat");
 savePath = fullfile(dataDir, "TCLab" + upper(kernelType) + ".mat");
 
 %% Load data
@@ -279,10 +280,12 @@ if export
 end
 
 %% Save trained models
-fprintf("\n[6] Saving trained models...\n");
-save(savePath, ...
-    "stateScaling", "inputScaling", ...
-    "stateLifting", "inputLifting", ...
-    "predictors" ...
-);
-fprintf("\tSaved to %s\n", savePath);
+if export
+    fprintf("\n[6] Saving trained models...\n");
+    save(savePath, ...
+        "stateScaling", "inputScaling", ...
+        "stateLifting", "inputLifting", ...
+        "predictors" ...
+    );
+    fprintf("\tSaved to %s\n", savePath);
+end
