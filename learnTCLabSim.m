@@ -11,11 +11,11 @@ plotTrainData = true;
 plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
-tcLab = TCLab(measurementNoiseCov=1E-1 * [1, 0.5; 0.5, 1]);
+tcLab = TCLab(measurementNoiseCov=5E-2*[1, 0.5; 0.5, 1]);
 stateScaling = Scale([276, 343; 276, 343]); % [x1] = K, [x2] = K
 inputScaling = Scale([0, 100; 0, 100]);     % [u1] = %, [u2] = %
 
-kernelType = "matern";
+kernelType = "poly";
 switch kernelType
     case "rbf"
         stateLifting = @(centers) GaussianLift(tcLab.stateDim, 0.5, centers);

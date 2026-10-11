@@ -12,9 +12,10 @@ plt.rcParams.update(
     }
 )
 
+SAMPLING_INTERVAL = 3
 data_folder = Path(__file__).parent.parent / "data/"
 reference_data = np.load(data_folder / "raw/TCLab_reference.npz")
-dt = reference_data["dt"]
+dt = SAMPLING_INTERVAL * reference_data["dt"]
 
 datasets = {"Train": [1, 2, 3, 4, 5], "Test": [7, 6, 8]}
 for mode, idxs in datasets.items():
@@ -23,9 +24,14 @@ for mode, idxs in datasets.items():
     for loc, idx in enumerate(idxs):
         data = np.load(data_folder / f"raw/TCLab_data_u0_EDMDc_{idx}.npz")
 
-        T_amb = np.full((1, data["U"].shape[1]), data["T_amb"])
-        XTrajs[loc] = np.hstack([data["X"], data["Y"][:, -1:]]) + data["T_amb"]
-        UTrajs[loc] = data["U"][:, 0:-1]  # np.vstack([T_amb, data["U"]])[:, 0:-1]
+        XFull = np.hstack([data["X"], data["Y"][:, -1:]]) + data["T_amb"]
+        XTrajs[loc] = XFull[:, ::SAMPLING_INTERVAL]
+
+        n_steps = XTrajs[loc].shape[1] - 1
+        UFine = data["U"][:, : n_steps * SAMPLING_INTERVAL]
+        UTrajs[loc] = UFine.reshape(UFine.shape[0], n_steps, SAMPLING_INTERVAL).mean(
+            axis=2
+        )
 
     # Save to mat file
     savemat(

@@ -31,11 +31,11 @@ switch kernelType
 end
 inputLifting = PolynomialLift(inputDim, 3);
 
-switch "one"
+switch "multi"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=1500);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=1000);
     case "multi"
-        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=1500);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=200);
 end
 
 % KCF coupling parameters
