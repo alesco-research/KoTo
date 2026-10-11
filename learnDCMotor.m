@@ -87,7 +87,7 @@ if plotTrainData
             ["Angular Velocity $\omega$", "[rad / s]"]
         }, ...
         inputLabels={["Input ", "[\%]"]} ...
-    )
+    );
 end
 
 %% Lift data
@@ -225,7 +225,7 @@ if plotTestData
             ["Angular Velocity $\omega$", "[rad / s]"]
         }, ...
         inputLabels={["Input ", "[\%]"]} ...
-    )
+    );
 end
 
 %% Plot

@@ -42,9 +42,10 @@ end
 kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
 
-savePath = fullfile( ...
-    fileparts(which("learnTCLabSim")), "./data/tcLabSim" + upper(kernelType) + ".mat" ...
-);
+
+scriptDir = fileparts(which("learnTCLab"));
+dataDir = fullfile(scriptDir, "data");
+trainPath = fullfile(dataDir, "TCLabSim" + upper(kernelType) + ".mat");
 
 %% Sample tcLab
 fprintf("\n[1] Generating training trajectories...\n");
@@ -93,7 +94,9 @@ if plotTrainData
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
         } ...
-    )
+    );
+    Ts = tcLab.Ts;
+    save(fullfile(dataDir, "TCLabSimTrain1.mat"), "XTrain", "UTrain", "Ts");
 end
 
 %% Lift data
@@ -214,7 +217,9 @@ if plotTestData
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
         } ...
-    )
+    );
+    Ts = tcLab.Ts;
+    save(fullfile(dataDir, "TCLabSimTest1.mat"), "XTest", "UTest", "Ts");
 end
 
 %% Plot

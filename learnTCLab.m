@@ -12,19 +12,19 @@ plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
 [stateDim, inputDim] = deal(2, 2);
-stateScaling = Scale([25, 70; 25, 70]); % [x1] = °C, x2 = °C
+stateScaling = Scale([23, 50; 23, 50]); % [x1] = °C, x2 = °C
 inputScaling = Scale([0, 50; 0, 50]);   % [Tamb] = °C, [u1] = %, [u2] = %
 
 kernelType = "poly";
 switch kernelType
     case "rbf"
-        stateLifting = @(centers) GaussianLift(stateDim, 100, centers);
+        stateLifting = @(centers) GaussianLift(stateDim, 0.05, centers);
         numberOfCenters = 300;
     case "rq"
-        stateLifting = @(centers) RationalQuadraticLift(stateDim, 100, 2.0, centers);
+        stateLifting = @(centers) RationalQuadraticLift(stateDim, 0.05, 2.0, centers);
         numberOfCenters = 300;
     case "matern"
-        stateLifting = @(centers) Matern52Lift(stateDim, 100, centers);
+        stateLifting = @(centers) Matern52Lift(stateDim, 0.05, centers);
         numberOfCenters = 300;
     case "poly"
         stateLifting = @(~) PolynomialLift(stateDim, 3);
@@ -80,7 +80,7 @@ if plotTrainData
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
         } ...
-    )
+    );
 end
 
 %% Lift data
@@ -108,9 +108,9 @@ fprintf("\n[3] Fit Koopman controllers...\n");
 
 predictors = cell(4, 1);
 predictorNames = ["Linear"; "Bilinear"; "GeKo"; "KCF"];
-predictors{1} = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
-predictors{2} = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
-predictors{3} = GeKoKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-4);
+predictors{1} = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-1);
+predictors{2} = BilinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-1);
+predictors{3} = GeKoKoopman(Ypairs, Zpairs, Vpairs, gamma=1E-1);
 
 if kernelType == "poly"
     % Get polynomial coupling
@@ -129,7 +129,7 @@ else
     kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
 end
 
-predictors{4} = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
+predictors{4} = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-1);
 
 %% Evaluate operator norms
 fprintf("\t%s", evalc("predictors{1}.getOperatorNorm();"))
@@ -166,7 +166,7 @@ if plotTestData
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
         } ...
-    )
+    );
 end
 
 %% Evaluate prediction error
