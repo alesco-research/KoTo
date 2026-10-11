@@ -6,25 +6,25 @@ initWorkspace;
 %% Set parameters
 rng(42); % for reproducibility
 savePlots = false;
-saveModels = false;
+saveModels = false; 
 plotTrainData = true;
 plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
-tcLab = TCLab();
+tcLab = TCLab(measurementNoiseCov=1E-1 * [1, 0.5; 0.5, 1]);
 stateScaling = Scale([276, 343; 276, 343]); % [x1] = K, [x2] = K
 inputScaling = Scale([0, 100; 0, 100]);     % [u1] = %, [u2] = %
 
-kernelType = "poly";
+kernelType = "matern";
 switch kernelType
     case "rbf"
-        stateLifting = @(centers) GaussianLift(tcLab.stateDim, 100, centers);
+        stateLifting = @(centers) GaussianLift(tcLab.stateDim, 0.5, centers);
         numberOfCenters = 300;
     case "rq"
-        stateLifting = @(centers) RationalQuadraticLift(tcLab.stateDim, 100, 2.0, centers);
+        stateLifting = @(centers) RationalQuadraticLift(tcLab.stateDim, 1, 5, centers);
         numberOfCenters = 300;
     case "matern"
-        stateLifting = @(centers) Matern52Lift(tcLab.stateDim, 100, centers);
+        stateLifting = @(centers) Matern52Lift(tcLab.stateDim, 1, centers);
         numberOfCenters = 300;
     case "poly"
         stateLifting = @(~) PolynomialLift(tcLab.stateDim, 3);
@@ -33,15 +33,14 @@ inputLifting = PolynomialLift(tcLab.inputDim, 5);
 
 switch "multi"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 100*200);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=5000);
     case "multi"
         getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=200);
 end
 
 % KCF coupling parameters
-kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
-
+kcfCouplingDegree = 2;  % <= polynomial lift degree
 
 scriptDir = fileparts(which("learnTCLab"));
 dataDir = fullfile(scriptDir, "data");
@@ -50,8 +49,8 @@ trainPath = fullfile(dataDir, "TCLabSim" + upper(kernelType) + ".mat");
 %% Sample tcLab
 fprintf("\n[1] Generating training trajectories...\n");
 
-trainHorizon = 2000;
-numberOfTrajectorySamples = 6;
+trainHorizon = 400;
+numberOfTrajectorySamples = 5;
 XTrain = cell(numberOfTrajectorySamples,1);
 UTrain = cell(numberOfTrajectorySamples,1);
 
@@ -66,7 +65,7 @@ for l = 1:numberOfTrajectorySamples
         1 + sum(sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)'
     ] * 25;
     UTrain{l} = clip(uTrain, 0, 100);
-    XTrain{l} = tcLab.simulate(x0, UTrain{l});
+    [~, XTrain{l}] = tcLab.simulate(x0, UTrain{l});
 end
 
 % Scale trajectories
@@ -155,8 +154,8 @@ fprintf("\t%s", evalc("predictors{4}.getOperatorNorm();"))
 
 %% Evaluate prediction error
 fprintf("\n[4] Evaluating prediction error...\n");
-testHorizon = 300;
-numberOfTestRuns = 10;
+testHorizon = 400;
+numberOfTestRuns = 3;
 
 testTime = (0:testHorizon) * tcLab.Ts;
 testFreqs = [100, 125, 257, 90];

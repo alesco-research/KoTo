@@ -12,35 +12,35 @@ plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
 [stateDim, inputDim] = deal(2, 2);
-stateScaling = Scale([23, 50; 23, 50]); % [x1] = °C, x2 = °C
-inputScaling = Scale([0, 50; 0, 50]);   % [Tamb] = °C, [u1] = %, [u2] = %
+stateScaling = Scale([23, 50; 23, 50]); % [x1] = °C, [x2] = °C
+inputScaling = Scale([0, 50; 0, 50]);   % [u1] = %,  [u2] = %
 
 kernelType = "poly";
 switch kernelType
     case "rbf"
-        stateLifting = @(centers) GaussianLift(stateDim, 0.05, centers);
+        stateLifting = @(centers) GaussianLift(stateDim, 0.5, centers);
         numberOfCenters = 300;
     case "rq"
-        stateLifting = @(centers) RationalQuadraticLift(stateDim, 0.05, 2.0, centers);
+        stateLifting = @(centers) RationalQuadraticLift(stateDim, 1, 5, centers);
         numberOfCenters = 300;
     case "matern"
-        stateLifting = @(centers) Matern52Lift(stateDim, 0.05, centers);
+        stateLifting = @(centers) Matern52Lift(stateDim, 1, centers);
         numberOfCenters = 300;
     case "poly"
         stateLifting = @(~) PolynomialLift(stateDim, 3);
 end
 inputLifting = PolynomialLift(inputDim, 3);
 
-switch "multi"
+switch "one"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 300*200);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=1500);
     case "multi"
-        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=300, maxNumberOfWindows=200);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=1500);
 end
 
 % KCF coupling parameters
-kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
+kcfCouplingDegree = 2;  % <= polynomial lift degree
 
 scriptDir = fileparts(which("learnTCLab"));
 dataDir = fullfile(scriptDir, "data");

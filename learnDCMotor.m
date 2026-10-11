@@ -33,14 +33,14 @@ inputLifting = ChebyshevLift(8);
 
 switch "multi"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 20*800);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=20*800);
     case "multi"
         getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=800, maxNumberOfRawWindows=6000);
 end
 
 % KCF coupling parameters
-kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
+kcfCouplingDegree = 2;  % <= polynomial lift degree
 
 savePath = fullfile( ...
     fileparts(which("learnDCMotor")), "./data/dcMotor" + upper(kernelType) + ".mat" ...
