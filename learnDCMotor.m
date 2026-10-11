@@ -1,16 +1,19 @@
 %% Learn Koopman Operator for a DC-Motor
-% clc, clearvars, close all;
+clc, clearvars, close all;
 initWorkspace;
+%#ok<*UNRCH>
 
 %% Set parameters
 rng(42); % for reproducibility
-trainHorizon = 2000;
-numberOfTrajectorySamples = 6;
+savePlots = false;
+saveModels = false;
+plotTrainData = true;
+plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
 motor = DCMotor();
-stateScaling = Scale([0, 10; 0, 250]); % x1 = [0, 10] A, x2 = [0, 250] rad/s
-inputScaling = Scale([0, 4]);          % u = [0, 4] without units
+stateScaling = Scale([0, 10; 0, 250]); % [x1 = A, [x2] = rad/s
+inputScaling = Scale([0, 4]);          % [u] = -
 
 kernelType = "poly";
 switch kernelType
@@ -40,13 +43,16 @@ kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
 
 savePath = fullfile( ...
-    fileparts(mfilename("fullpath")), "./data/dcMotor" + upper(kernelType) + ".mat" ...
+    fileparts(which("learnDCMotor")), "./data/dcMotor" + upper(kernelType) + ".mat" ...
 );
 
 %% Sample motor
 fprintf("\n[1] Generating training trajectories...\n");
-XTrainScaled = cell(numberOfTrajectorySamples,1);
-UTrainScaled = cell(numberOfTrajectorySamples,1);
+
+trainHorizon = 2000;
+numberOfTrajectorySamples = 6;
+XTrain = cell(numberOfTrajectorySamples,1);
+UTrain = cell(numberOfTrajectorySamples,1);
 
 xRange = [-5, 5; -80, 20]; % physical operating ranges
 trainTime = (0:trainHorizon-1)' * motor.Ts; % time vector
@@ -55,13 +61,13 @@ trainFreqs = [1.5, 3.5, 5.5, 9.5, 15.5, 26.5]; % driving input frequencies
 for l = 1:numberOfTrajectorySamples
     x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
     uTrain = sum(0.8 * sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)';
-    uTrain = clip(uTrain, -4, 4);
-
-    xTrain = motor.simulate(x0, uTrain);
-
-    XTrainScaled{l} = stateScaling.scale(xTrain);
-    UTrainScaled{l} = inputScaling.scale(uTrain);    
+    UTrain{l} = clip(uTrain, -4, 4);
+    XTrain{l} = motor.simulate(x0, UTrain{l});
 end
+
+% Scale trajectories
+XTrainScaled = cellfun(@stateScaling.scale, XTrain, UniformOutput=false);
+UTrainScaled = cellfun(@inputScaling.scale, UTrain, UniformOutput=false);
 
 % Stack trajectories
 X = cell2mat(cellfun(@(x) x(:, 1:end-1), XTrainScaled, UniformOutput=false)');
@@ -72,6 +78,17 @@ fprintf( ...
     numberOfTrajectorySamples, ...
     size(X, 2) ...
 );
+
+if plotTrainData
+    plotTrajectories( ...
+        XTrain, UTrain, name="Train Trajectories", ...
+        stateLabels={
+            ["Current $I$", "[A]"];
+            ["Angular Velocity $\omega$", "[rad / s]"]
+        }, ...
+        inputLabels={["Input ", "[\%]"]} ...
+    )
+end
 
 %% Lift data
 fprintf("\n[2] Lifting training data...\n");
@@ -165,14 +182,14 @@ x0Test = [
     [3; -40], xRange(:, 1) + diff(xRange, 1, 2) .* rand(numberOfTestRuns - 1, 2)';
 ]; rng(rngState);
 
-XTest = zeros(numberOfTestRuns, motor.stateDim, testHorizon + 1);
+XTest = cell(numberOfTestRuns, 1);
 XPredicted = zeros(numberOfTestRuns, motor.stateDim, testHorizon + 1, numel(predictors));
 liftedStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
 scaledStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
 for i = 1:numberOfTestRuns
-    XTest(i, :, :) = motor.simulate(x0Test(:, i), UTest);
+    XTest{i} = motor.simulate(x0Test(:, i), UTest);
 
-    XTestScaled = stateScaling.scale(XTest(i, :, :));
+    XTestScaled = stateScaling.scale(XTest{i});
     ZTest = stateLifting.lift(XTestScaled);
 
     for j = 1:numel(predictors)
@@ -199,9 +216,20 @@ for i = 1:numberOfTestRuns
     fprintf("\n");
 end
 
+if plotTestData
+    plotTrajectories( ...
+        XTest, cellfun(@(x) UTest, XTest, UniformOutput=false), ...
+        name="Test Trajectories", ...
+        stateLabels={
+            ["Current $I$", "[A]"];
+            ["Angular Velocity $\omega$", "[rad / s]"]
+        }, ...
+        inputLabels={["Input ", "[\%]"]} ...
+    )
+end
+
 %% Plot
 fprintf("\n[5] Plotting...\n");
-export = false;
 margin = 0;
 width = 12;
 height = 8;
@@ -227,7 +255,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
         height=height, ...
@@ -247,7 +275,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
         height=height, ...
@@ -264,7 +292,7 @@ h = plot( ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(h, {'Marker'}, markers(:));
-plot(testTime, squeeze(XTest(1, 1, :)), "k--", LineWidth=1.5)
+plot(testTime, squeeze(XTest{1}(1, :)), "k--", LineWidth=1.5)
 ylabel("$x_1$ [A]", Interpreter="latex")
 legend([predictorNames; "True"], Location="best", Interpreter="latex")
 
@@ -274,11 +302,11 @@ h = plot( ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(h, {'Marker'}, markers(:));
-plot(testTime, squeeze(XTest(1, 2, :)), "k--", LineWidth=1.5)
+plot(testTime, squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$x_2$ [rad / s]", Interpreter="latex")
 legend([predictorNames; "True"], Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/state_trajectories.pdf', ...
         width=width, ...
         height=height, ...
@@ -293,12 +321,12 @@ for i = 1:numel(predictors)
     plot(squeeze(XPredicted(1, 1, :, i)), squeeze(XPredicted(1, 2, :, i)), ...
         LineWidth=1.5, MarkerSize=5, Marker=markers{i}, MarkerIndices=markerIndices);
 end
-plot(squeeze(XTest(1, 1, :)), squeeze(XTest(1, 2, :)), "k--", LineWidth=1.5)
-plot(XTest(1, 1, 1), XTest(1, 2, 1), "ko", MarkerSize=10, MarkerFaceColor="y")
+plot(squeeze(XTest{1}(1, :)), squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
+plot(XTest{1}(1, 1), XTest{1}(2, 1), "ko", MarkerSize=10, MarkerFaceColor="y")
 xlabel("$x_1$ [A]", Interpreter="latex")
 ylabel("$x_2$ [rad / s]", Interpreter="latex")
 legend([predictorNames; "True"; "$x_0$"], Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/phase_portrait.pdf', ...
         width=width, ...
         height=height, ...
@@ -309,7 +337,7 @@ if export
 end
 
 %% Save trained models
-if export
+if saveModels
     fprintf("\n[6] Saving trained models...\n");
     save(savePath, ...
         "motor", ...

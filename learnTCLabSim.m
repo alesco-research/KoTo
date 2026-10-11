@@ -1,27 +1,30 @@
 %% Learn Koopman Operator for a TC-Lab
 clc, clearvars, close all;
 initWorkspace;
+%#ok<*UNRCH>
 
 %% Set parameters
 rng(42); % for reproducibility
-trainHorizon = 2000;
-numberOfTrajectorySamples = 6;
+savePlots = false;
+saveModels = false;
+plotTrainData = true;
+plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
 tcLab = TCLab();
-stateScaling = Scale([276, 343; 276, 343]); % x1 = [276, 343] K, x2 = [276, 343] K
-inputScaling = Scale([0, 1; 0, 1]);         % u1 = [0, 1], u2 = [0, 1]
+stateScaling = Scale([276, 343; 276, 343]); % [x1] = K, [x2] = K
+inputScaling = Scale([0, 100; 0, 100]);     % [u1] = %, [u2] = %
 
 kernelType = "poly";
 switch kernelType
     case "rbf"
-        stateLifting = @(centers) GaussianLift(tcLab.stateDim, 10, centers);
+        stateLifting = @(centers) GaussianLift(tcLab.stateDim, 100, centers);
         numberOfCenters = 300;
     case "rq"
-        stateLifting = @(centers) RationalQuadraticLift(tcLab.stateDim, 10, 2.0, centers);
+        stateLifting = @(centers) RationalQuadraticLift(tcLab.stateDim, 100, 2.0, centers);
         numberOfCenters = 300;
     case "matern"
-        stateLifting = @(centers) Matern52Lift(tcLab.stateDim, 10, centers);
+        stateLifting = @(centers) Matern52Lift(tcLab.stateDim, 100, centers);
         numberOfCenters = 300;
     case "poly"
         stateLifting = @(~) PolynomialLift(tcLab.stateDim, 3);
@@ -30,9 +33,9 @@ inputLifting = PolynomialLift(tcLab.inputDim, 5);
 
 switch "multi"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 20*800);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, 100*200);
     case "multi"
-        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=800, maxNumberOfRawWindows=6000);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=200);
 end
 
 % KCF coupling parameters
@@ -40,13 +43,16 @@ kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
 
 savePath = fullfile( ...
-    fileparts(mfilename("fullpath")), "./data/tcLabSim" + upper(kernelType) + ".mat" ...
+    fileparts(which("learnTCLabSim")), "./data/tcLabSim" + upper(kernelType) + ".mat" ...
 );
 
 %% Sample tcLab
 fprintf("\n[1] Generating training trajectories...\n");
-XTrainScaled = cell(numberOfTrajectorySamples,1);
-UTrainScaled = cell(numberOfTrajectorySamples,1);
+
+trainHorizon = 2000;
+numberOfTrajectorySamples = 6;
+XTrain = cell(numberOfTrajectorySamples,1);
+UTrain = cell(numberOfTrajectorySamples,1);
 
 xRange = [276, 343; 276, 343]; % physical operating ranges
 trainTime  = (0:trainHorizon-1)' * tcLab.Ts; % time vector
@@ -57,14 +63,14 @@ for l = 1:numberOfTrajectorySamples
     uTrain = [
         1 + sum(sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)';
         1 + sum(sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)'
-    ] * 0.25;
-    uTrain = clip(uTrain, 0, 1);
-
-    xTrain = tcLab.simulate(x0, uTrain);
-
-    XTrainScaled{l} = stateScaling.scale(xTrain);
-    UTrainScaled{l} = inputScaling.scale(uTrain);
+    ] * 25;
+    UTrain{l} = clip(uTrain, 0, 100);
+    XTrain{l} = tcLab.simulate(x0, UTrain{l});
 end
+
+% Scale trajectories
+XTrainScaled = cellfun(@stateScaling.scale, XTrain, UniformOutput=false);
+UTrainScaled = cellfun(@inputScaling.scale, UTrain, UniformOutput=false);
 
 % Stack trajectories
 X = cell2mat(cellfun(@(x) x(:, 1:end-1), XTrainScaled, UniformOutput=false)');
@@ -75,6 +81,20 @@ fprintf( ...
     numberOfTrajectorySamples, ...
     size(X, 2) ...
 );
+
+if plotTrainData
+    plotTrajectories( ...
+        XTrain, UTrain, name="Train Trajectories", ...
+        stateLabels={
+            ["Temp. Heater 1", "$[^\circ$C]"];
+            ["Temp. Heater 2", "$[^\circ$C]"]
+        }, ...
+        inputLabels={
+            ["Input Heater 1",  "[\%]"];
+            ["Input Heater 2",  "[\%]"]
+        } ...
+    )
+end
 
 %% Lift data
 fprintf("\n[2] Lifting training data...\n");
@@ -137,31 +157,28 @@ numberOfTestRuns = 10;
 
 testTime = (0:testHorizon) * tcLab.Ts;
 testFreqs = [100, 125, 257, 90];
-testPhases = 2 * pi * rand(2, numel(testFreqs));
-UTest = [
-        1 + sum(sin(testFreqs .* testTime(1:end - 1)' + testPhases(1,:)), 2)';
-        1 + sum(sin(testFreqs .* testTime(1:end - 1)' + testPhases(2,:)), 2)'
-] * 0.25;
-UTest = clip(UTest, 0, 1);
 
-UTestScaled = inputScaling.scale(UTest);
-VTest = inputLifting.lift(UTestScaled);
-testInputs = {UTestScaled, UTestScaled, VTest, VTest};
-
-x0Test = [
-    [276; 343], xRange(:, 1) + diff(xRange, 1, 2) .* rand(2, numberOfTestRuns - 1);
-];
-
-XTest = zeros(numberOfTestRuns, tcLab.stateDim, testHorizon + 1);
+XTest = cell(numberOfTestRuns, 1);
+UTest = cell(numberOfTestRuns, 1);
 XPredicted = zeros(numberOfTestRuns, tcLab.stateDim, testHorizon + 1, numel(predictors));
 liftedStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
 scaledStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
 for i = 1:numberOfTestRuns
-    XTest(i, :, :) = tcLab.simulate(x0Test(:, i), UTest);
+    x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
+    uTest = [
+        1 + sum(sin(testFreqs .* testTime(1:end - 1)' + 2 * pi * rand(1,4)), 2)';
+        1 + sum(sin(testFreqs .* testTime(1:end - 1)' + 2 * pi * rand(1,4)), 2)'
+    ] * 25;
+    UTest{i} = clip(uTest, 0, 100);
+    XTest{i} = tcLab.simulate(x0, UTest{i});
 
-    XTestScaled = stateScaling.scale(XTest(i, :, :));
+    XTestScaled = stateScaling.scale(XTest{i});
+    UTestScaled = inputScaling.scale(UTest{i});
+
     ZTest = stateLifting.lift(XTestScaled);
-
+    VTest = inputLifting.lift(UTestScaled);
+    
+    testInputs = {UTestScaled, UTestScaled, VTest, VTest};
     for j = 1:numel(predictors)
         ZPredicted = predictors{j}.rollout(ZTest(:, 1), testInputs{j});
         XPredictedScaled = stateLifting.project(ZPredicted);
@@ -186,9 +203,22 @@ for i = 1:numberOfTestRuns
     fprintf("\n");
 end
 
+if plotTestData
+    plotTrajectories( ...
+        XTest, UTest, name="Test Trajectories", ...
+        stateLabels={
+            ["Temp. Heater 1", "$[^\circ$C]"];
+            ["Temp. Heater 2", "$[^\circ$C]"]
+        }, ...
+        inputLabels={
+            ["Input Heater 1",  "[\%]"];
+            ["Input Heater 2",  "[\%]"]
+        } ...
+    )
+end
+
 %% Plot
 fprintf("\n[5] Plotting...\n");
-export = false;
 margin = 0;
 width = 12;
 height = 8;
@@ -214,7 +244,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
         height=height, ...
@@ -234,7 +264,7 @@ set(h, {'Marker'}, markers(:));
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$", Interpreter="latex")
 legend(predictorNames, Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
         height=height, ...
@@ -251,7 +281,7 @@ h = plot( ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(h, {'Marker'}, markers(:));
-plot(testTime, squeeze(XTest(1, 1, :)) - 273.15, "k--", LineWidth=1.5)
+plot(testTime, squeeze(XTest{1}(1, :)) - 273.15, "k--", LineWidth=1.5)
 ylabel("$x_1$ $[^\circ$C]", Interpreter="latex")
 legend([predictorNames; "True"], Location="best", Interpreter="latex")
 
@@ -261,11 +291,11 @@ h = plot( ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(h, {'Marker'}, markers(:));
-plot(testTime, squeeze(XTest(1, 2, :)) - 273.15, "k--", LineWidth=1.5)
+plot(testTime, squeeze(XTest{1}(2, :)) - 273.15, "k--", LineWidth=1.5)
 xlabel("Time [s]", Interpreter="latex")
 ylabel("$x_2$ $[^\circ$C]", Interpreter="latex")
 legend([predictorNames; "True"], Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/state_trajectories.pdf', ...
         width=width, ...
         height=height, ...
@@ -281,12 +311,12 @@ for i = 1:numel(predictors)
         squeeze(XPredicted(1, 2, :, i)) - 273.15, ...
         LineWidth=1.5, MarkerSize=5, Marker=markers{i}, MarkerIndices=markerIndices);
 end
-plot(squeeze(XTest(1, 1, :)) - 273.15, squeeze(XTest(1, 2, :)) - 273.15, "k--", LineWidth=1.5)
-plot(XTest(1, 1, 1) - 273.15, XTest(1, 2, 1) - 273.15, "ko", MarkerSize=10, MarkerFaceColor="y")
+plot(squeeze(XTest{1}(1, :)) - 273.15, squeeze(XTest{1}(2, :)) - 273.15, "k--", LineWidth=1.5)
+plot(XTest{1}(1, 1) - 273.15, XTest{1}(2, 1) - 273.15, "ko", MarkerSize=10, MarkerFaceColor="y")
 xlabel("$x_1$ $[^\circ$C]", Interpreter="latex")
 ylabel("$x_2$ $[^\circ$C]", Interpreter="latex")
 legend([predictorNames; "True"; "$x_0$"], Location="best", Interpreter="latex")
-if export
+if savePlots
     exportPlot(gcf(), 'data/phase_portrait.pdf', ...
         width=width, ...
         height=height, ...
@@ -297,7 +327,7 @@ if export
 end
 
 %% Save trained models
-if export
+if saveModels
     fprintf("\n[6] Saving trained models...\n");
     save(savePath, ...
         "tcLab", ...

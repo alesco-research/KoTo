@@ -13,11 +13,11 @@ classdef TCLab < SystemBase
     %      Q1max      - Max power of heater 1 [W] (default: 1)
     %      Q2max      - Max power of heater 2 [W] (default: 0.75)
     %      emissivity - Emissivity [-] (default: 0.9)
-    %      Ts         - Time step [s] (default: 0.5)
+    %      Ts         - Step size [s] (default: 1)
     %      odeopts    - Options passed to ODE45
     %
     %   State x = [T1; T2] in K. Input u = [u1; u2] are heater duty
-    %   cycles, clipped to [0,1].
+    %   cycles, clipped to [0,100].
     %
     %   X = SIMULATE(M,X0,U) returns the 2-by-(T+1) state trajectory for
     %   initial state X0 (2-by-1) and inputs U (2-by-T).
@@ -49,7 +49,7 @@ classdef TCLab < SystemBase
         function obj = TCLab(options)
             arguments
                 options.?TCLab;
-                options.Ts {mustBePositive} = 0.5;
+                options.Ts {mustBePositive} = 1;
             end
             for f = string(fieldnames(options))'
                 obj.(f) = options.(f);
@@ -65,10 +65,10 @@ classdef TCLab < SystemBase
             dx = [ ...
                 obj.U * obj.A * (obj.Ta - x(1,:)) + ...
                 obj.emissivity * obj.sigma * obj.A * (obj.Ta^4 - x(1,:).^4) + ...
-                convection + radiation + obj.Q1max * clip(u(1,:), 0, 1);
+                convection + radiation + obj.Q1max * clip(u(1,:), 0, 100) / 100;
                 obj.U * obj.A * (obj.Ta - x(2,:)) + ...
                 obj.emissivity * obj.sigma * obj.A * (obj.Ta^4 - x(2,:).^4) - ...
-                convection - radiation + obj.Q2max * clip(u(2,:), 0, 1) ...
+                convection - radiation + obj.Q2max * clip(u(2,:), 0, 100) / 100 ...
             ] / (obj.m * obj.Cp);
         end
     end

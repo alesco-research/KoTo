@@ -1,15 +1,19 @@
 %% Learn Koopman Operator for a TC-Lab
 clc, clearvars, close all;
 initWorkspace;
+%#ok<*UNRCH>
 
 %% Set parameters
 rng(42); % for reproducibility
+savePlots = false;
+saveModels = false;
+plotTrainData = true;
+plotTestData = true;
 
 %% Instantiate model, scaling, lifting and predictor
-stateDim = 2; 
-inputDim = 2;
-stateScaling = Scale([0, 70; 0, 70]); % [x1] = °C, x2 = °C
-inputScaling = Scale([0, 50; 0, 50]); % [Tamb] = °C, [u1] = %, [u2] = %
+[stateDim, inputDim] = deal(2, 2);
+stateScaling = Scale([25, 70; 25, 70]); % [x1] = °C, x2 = °C
+inputScaling = Scale([0, 50; 0, 50]);   % [Tamb] = °C, [u1] = %, [u2] = %
 
 kernelType = "poly";
 switch kernelType
@@ -23,7 +27,7 @@ switch kernelType
         stateLifting = @(centers) Matern52Lift(stateDim, 100, centers);
         numberOfCenters = 300;
     case "poly"
-        stateLifting = @(~) PolynomialLift(stateDim, 10);
+        stateLifting = @(~) PolynomialLift(stateDim, 3);
 end
 inputLifting = PolynomialLift(inputDim, 3);
 
@@ -38,7 +42,7 @@ end
 kcfCouplingDegree = 2;  % <= polynomial lift degree
 kcfCouplingRatio = 2;   % > 1
 
-scriptDir = fileparts(mfilename("fullpath"));
+scriptDir = fileparts(which("learnTCLab"));
 dataDir = fullfile(scriptDir, "data");
 
 trainPath = fullfile(dataDir, "TCLabTrain1.mat");
@@ -64,6 +68,20 @@ fprintf( ...
     numberOfTrajectorySamples, ...
     size(X, 2) ...
 );
+
+if plotTrainData
+    plotTrajectories( ...
+        XTrain, UTrain, Ts, name="Train Trajectories", ...
+        stateLabels={
+            ["Temp. Heater 1", "$[^\circ$C]"];
+            ["Temp. Heater 2", "$[^\circ$C]"]
+        }, ...
+        inputLabels={
+            ["Input Heater 1",  "[\%]"];
+            ["Input Heater 2",  "[\%]"]
+        } ...
+    )
+end
 
 %% Lift data
 fprintf("\n[2] Lifting training data...\n");
@@ -119,17 +137,14 @@ fprintf("\t%s", evalc("predictors{2}.getOperatorNorm();"))
 fprintf("\t%s", evalc("predictors{3}.getOperatorNorm();"))
 fprintf("\t%s", evalc("predictors{4}.getOperatorNorm();"))
 
-%% Evaluate prediction error
-fprintf("\n[4] Evaluating prediction error...\n");
+%% Load test data
+fprintf("\n[4] Load test data...\n");
 load(testPath, "XTest", "UTest", "Ts")
+numberOfTestRuns = numel(XTest);
 
 if TsTrain ~= Ts
     error("Train and test sampling time mismatch.")
 end
-
-testHorizon = size(UTest{1}, 2);
-numberOfTestRuns = numel(XTest);
-testTime = (0:testHorizon) * Ts;
 
 % Scale trajectories
 XTestScaled = cellfun(@stateScaling.scale, XTest, UniformOutput=false)';
@@ -138,6 +153,26 @@ UTestScaled = cellfun(@inputScaling.scale, UTest, UniformOutput=false)';
 % Lift trajectories
 ZTest = cellfun(@stateLifting.lift, XTestScaled, UniformOutput=false);
 VTest = cellfun(@inputLifting.lift, UTestScaled, UniformOutput=false);
+
+fprintf("\tNumber of test trajectories: %d.", numberOfTestRuns);
+if plotTestData
+    plotTrajectories( ...
+        XTest, UTest, Ts, name="Test Trajectories", ...
+        stateLabels={
+            ["Temp. Heater 1", "$[^\circ$C]"];
+            ["Temp. Heater 2", "$[^\circ$C]"]
+        }, ...
+        inputLabels={
+            ["Input Heater 1",  "[\%]"];
+            ["Input Heater 2",  "[\%]"]
+        } ...
+    )
+end
+
+%% Evaluate prediction error
+fprintf("\n[5] Evaluating prediction error...\n");
+testHorizon = size(UTest{1}, 2);
+testTime = (0:testHorizon) * Ts;
 
 testInputs = {UTestScaled, UTestScaled, VTest, VTest};
 
@@ -170,7 +205,7 @@ for i = 1:numberOfTestRuns
 end
 
 %% Plot
-fprintf("\n[5] Plotting...\n");
+fprintf("\n[6] Plotting...\n");
 export = false;
 margin = 0;
 width = 12;
@@ -281,7 +316,7 @@ end
 
 %% Save trained models
 if export
-    fprintf("\n[6] Saving trained models...\n");
+    fprintf("\n[7] Saving trained models...\n");
     save(savePath, ...
         "stateScaling", "inputScaling", ...
         "stateLifting", "inputLifting", ...
