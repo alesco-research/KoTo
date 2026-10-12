@@ -9,14 +9,11 @@ classdef BilinearKoopman < KoopmanBase
     %              chosen by k-means on [start; mid; end] states.
     %       false: requires maxNumberOfPairs (random one-step pairs).
     %
-    %   learn(obj, Z, U, gamma=0)
-    %     gamma: nonnegative ridge regularization weight.
-    %
     %   y = predict(obj, z, u)
     %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
     %     z, u must match stateDim and inputDim.
 
-    properties (SetAccess=protected)
+    properties (SetAccess=immutable)
         A (:,:) {mustBeNumeric} = [];
         B (:,:) {mustBeNumeric} = [];
         N (:,:) {mustBeNumeric} = [];
@@ -26,8 +23,8 @@ classdef BilinearKoopman < KoopmanBase
         function obj = BilinearKoopman(Y, Z, U, options)
             arguments
                 Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                U (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, Z)};
+                U (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, U)};
                 options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
             end
             [nz, nu] = deal(size(Z, 1), size(U, 1));
@@ -44,7 +41,7 @@ classdef BilinearKoopman < KoopmanBase
 
         function y = predict(obj, z, u)
             arguments
-                obj (1,1) BilinearKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) BilinearKoopman;
                 z (:,:) {KoopmanBase.mustMatchStateDim(obj, z)};
                 u (:,:) {KoopmanBase.mustMatchInputDim(obj, u)};
             end
@@ -53,7 +50,7 @@ classdef BilinearKoopman < KoopmanBase
 
         function [normA, normB, normN] = getOperatorNorm(obj)
             arguments
-                obj (1,1) BilinearKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) BilinearKoopman;
             end
             normA = norm(obj.A, "fro");
             normB = norm(obj.B, "fro");

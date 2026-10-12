@@ -10,16 +10,11 @@ classdef KCFKoopman < KoopmanBase
     %              chosen by k-means on [start; mid; end] states.
     %       false: requires maxNumberOfPairs (random one-step pairs).
     %
-    %   learn(obj, Z, V, gamma=0, coupleIdx=1:stateDim)
-    %     gamma:     nonnegative ridge weight (uniform).
-    %     coupleIdx: lifted state dimensions to which the inputs couple to.
-    %   Drops constant inputs v with variance < 1e-10.
-    %
     %   y = predict(obj, z, v)
     %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
     %     z, v must match stateDim and inputDim.
 
-    properties (SetAccess=protected)
+    properties (SetAccess=immutable)
         A11 (:,:) {mustBeNumeric} = [];
         A12 (:,:) {mustBeNumeric} = [];
         couplingIdxs (1,:) {mustBeInteger} = [];
@@ -30,8 +25,8 @@ classdef KCFKoopman < KoopmanBase
         function obj = KCFKoopman(Y, Z, V, options)
             arguments
                 Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                V (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, Z)};
+                V (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, V)};
                 options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
                 options.couplingIdxs (1,:) {mustBeInteger, mustBePositive} = 1:size(Z, 1);
             end
@@ -59,7 +54,7 @@ classdef KCFKoopman < KoopmanBase
 
         function y = predict(obj, z, v)
             arguments
-                obj (1,1) KCFKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) KCFKoopman;
                 z (:,:) {KoopmanBase.mustMatchStateDim(obj, z)};
                 v (:,:) {KCFKoopman.mustBeValidInput(obj, v)};
             end
@@ -68,7 +63,7 @@ classdef KCFKoopman < KoopmanBase
 
         function [normA11, normA12] = getOperatorNorm(obj)
             arguments
-                obj (1,1) KCFKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) KCFKoopman;
             end
             normA11 = norm(obj.A11, "fro");
             normA12 = norm(obj.A12, "fro");

@@ -1,40 +1,42 @@
 classdef (Abstract) KoopmanBase < handle
-    %KOOPMANBASE Abstract base class for Koopman models (handle class).
-    %   Subclasses implement predict and learn_. The sealed learn method
-    %   builds training pairs from trajectories and passes them to learn_.
+    %KoopmanBase Abstract base class for dynamical-system predictors (handle class).
+    %   Subclasses implement predict, which maps a state and an input to the
+    %   successor state. The sealed rollout method uses predict to simulate
+    %   a trajectory over an input sequence.
     %
-    %   obj = Subclass(Name=Value, ...)
-    %     lifted features.
-    %     useMultiStepWindows (true)  Pair selection mode:
-    %       true : requires horizon, maxNumberOfWindows;
-    %              optional maxNumberOfRawWindows. Expressiv windows are 
-    %              chosen by k-means on [start; mid; end] states.
-    %       false: requires maxNumberOfPairs (random one-step pairs).
+    %   Properties (public):
+    %     stateDim  Number of state rows (positive integer scalar).
+    %     inputDim  Number of input rows (positive integer scalar).
     %
-    %   [Y, Z, W] = learn(obj, Zc, Wc, varargin)
-    %     Zc, Wc: cell vectors, one entry per trajectory; Zc{i} has one
-    %     more column than Wc{i}. Returns successor states Y, start
-    %     states Z and inputs W with matching columns, and passes them
-    %     plus varargin to learn_.
+    %   y = predict(obj, z, u)    (abstract)
+    %     z: state column vector (stateDim x 1), u: input column vector
+    %     (inputDim x 1). Returns the predicted successor state y.
     %
-    %   Static: getMultiStepWindows(Z, W, horizon, ...),
-    %           getOneStepPairs(Z, W, ...)
+    %   Z = rollout(obj, z0, w)   (sealed)
+    %     z0: initial state (stateDim x 1), w: input sequence
+    %     (inputDim x T). Returns the trajectory Z (stateDim x T+1),
+    %     where Z(:,1) = z0 and Z(:,t+1) = predict(obj, Z(:,t), w(:,t)).
+    %
+    %   Protected static helpers for subclasses:
+    %     columnKron(A, B)           Column-wise Kronecker product.
+    %     mustBeEqualSize(Z, W)      Check equal number of columns.
+    %     mustMatchStateDim(obj, v)  Check size(v,1) == obj.stateDim.
+    %     mustMatchInputDim(obj, v)  Check size(v,1) == obj.inputDim.
 
     properties (SetAccess=public)
-        stateDim (1,1) {mustBeInteger} = 0;
-        inputDim (1,1) {mustBeInteger} = 0;
+        stateDim {mustBeInteger, mustBePositive} = [];
+        inputDim {mustBeInteger, mustBePositive} = [];
     end
 
     methods (Abstract)
         y = predict(obj, z, u)
-        varargout = getOperatorNorm()
     end
     
     methods (Sealed)
         function Z = rollout(obj, z0, w)
             arguments
-                obj (1,1) KoopmanBase {KoopmanBase.mustBeFitted(obj)};
-                z0 (:,:) {KoopmanBase.mustMatchStateDim(obj, z0)};
+                obj (1,1) KoopmanBase;
+                z0 (:,1) {KoopmanBase.mustMatchStateDim(obj, z0)};
                 w (:,:) {KoopmanBase.mustMatchInputDim(obj, w)};
             end
             T = size(w, 2);
@@ -47,27 +49,28 @@ classdef (Abstract) KoopmanBase < handle
 
     methods (Static, Hidden, Access=protected)
         function P = columnKron(A, B)
-            % P(:,k) = kron(A(:,k), B(:,k)) for every column k
             n = size(A, 2);
             P = reshape(reshape(B, size(B,1), 1, n) .* reshape(A, 1, size(A,1), n), [], n);
         end
 
-        function mustBeFitted(obj)
-            if obj.inputDim == 0 || obj.stateDim == 0
+        function mustBeEqualSize(Z, W)
+            if size(Z, 2) ~= size(W, 2)
                 error( ...
-                    "Koopman:OperatorUndefined", ...
-                    "To use `predict` first fit the Koopman operator " + ...
-                    "using `learn`." ...
-                );
+                    "KoopmanBase:DimensionMismatch", ...
+                    "Inputs must have the same number of samples. " + ...
+                    "Received inputs of dimension %d and %d instead.", ...
+                    size(Z, 2), ...
+                    size(W, 2) ...
+            );
             end
         end
         
         function mustMatchStateDim(obj, val)
             if size(val, 1) ~= obj.stateDim
                 error( ...
-                    "Koopman:DimensionMismatch", ...
+                    "KoopmanBase:DimensionMismatch", ...
                     "Value must have %d row(s) to match the " + ... 
-                    "Koopman operator.", ...
+                    "state dimension.", ...
                     obj.stateDim ...
                 );
             end

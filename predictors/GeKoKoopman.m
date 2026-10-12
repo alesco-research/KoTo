@@ -9,14 +9,11 @@ classdef GeKoKoopman < KoopmanBase
     %              chosen by k-means on [start; mid; end] states.
     %       false: requires maxNumberOfPairs (random one-step pairs).
     %
-    %   learn(obj, Z, V, gamma=0)
-    %     gamma: nonnegative ridge regularization weight.
-    %
     %   y = predict(obj, z, v)
     %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
     %     z, v must match stateDim and inputDim.
 
-    properties (SetAccess=protected)
+    properties (SetAccess=immutable)
         K (:,:) {mustBeNumeric} = [];
     end
 
@@ -24,8 +21,8 @@ classdef GeKoKoopman < KoopmanBase
         function obj = GeKoKoopman(Y, Z, V, options)
             arguments
                 Y (:,:) {mustBeNumeric};
-                Z (:,:) {mustBeNumeric};
-                V (:,:) {mustBeNumeric};
+                Z (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, Z)};
+                V (:,:) {mustBeNumeric, KoopmanBase.mustBeEqualSize(Y, V)};
                 options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
             end
             [obj.stateDim, obj.inputDim] = deal(size(Z, 1), size(V, 1));
@@ -36,7 +33,7 @@ classdef GeKoKoopman < KoopmanBase
 
         function y = predict(obj, z, v)
             arguments
-                obj (1,1) GeKoKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) GeKoKoopman;
                 z (:,:) {KoopmanBase.mustMatchStateDim(obj, z)};
                 v (:,:) {KoopmanBase.mustMatchInputDim(obj, v)};
             end
@@ -45,7 +42,7 @@ classdef GeKoKoopman < KoopmanBase
 
         function [normK] = getOperatorNorm(obj)
             arguments
-                obj (1,1) GeKoKoopman {KoopmanBase.mustBeFitted(obj)};
+                obj (1,1) GeKoKoopman;
             end
             normK = norm(obj.K, "fro");
             fprintf("Geko:\t ||K||_F = %.4e\n", normK);
