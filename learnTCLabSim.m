@@ -94,8 +94,8 @@ if plotTrainData
             ["Input Heater 2",  "[\%]"]
         } ...
     );
-    Ts = tcLab.Ts;
-    save(fullfile(dataDir, "TCLabSimTrain1.mat"), "XTrain", "UTrain", "Ts");
+    % Ts = tcLab.Ts;
+    % save(fullfile(dataDir, "TCLabSimTrain1.mat"), "XTrain", "UTrain", "Ts");
 end
 
 %% Lift data
@@ -120,15 +120,14 @@ fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 %% Fit Koopman controllers
 fprintf("\n[3] Fit Koopman controllers...\n");
 [Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrain, UTrainScaled, VTrain);
+pairs = [
+    cellfun(@(x) x(:,1:end-1), XTrainScaled(:)', UniformOutput=false);
+    UTrainScaled(:)'
+];
 
 memoryPredictors = cell(1, 1);
 memoryPredictorNames = "MOESP";
-memoryPredictors{1} = MOESP( ...
-    cellfun(@(x) x(:,1:end-1), XTrainScaled, UniformOutput=false), ...
-    UTrainScaled, ...
-    45, ...
-    stateDim = 4 ...
-);
+memoryPredictors{1} = MOESP(pairs{:}, L=45, stateDim = 4);
 
 predictors = cell(4, 1);
 predictorNames = ["Linear"; "Bilinear"; "GeKo"; "KCF"];
@@ -197,8 +196,10 @@ for i = 1:numberOfTestRuns
         uWarm = UTestScaled(:, 1:m);
         yWarm = XTestScaled(:, 1:m);
         uFuture = UTestScaled(:, m+1:end);
+        
         XPredictedScaled = nan(tcLab.stateDim, testHorizon + 1);
         XPredictedScaled(:, m+1:end-1) = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
+
         XPredicted(i, :, :, j) = stateScaling.unscale(XPredictedScaled);
         scaledStateError(i, :, j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled).^2, 1, "omitnan") ...
@@ -241,8 +242,8 @@ if plotTestData
             ["Input Heater 2",  "[\%]"]
         } ...
     );
-    Ts = tcLab.Ts;
-    save(fullfile(dataDir, "TCLabSimTest1.mat"), "XTest", "UTest", "Ts");
+    % Ts = tcLab.Ts;
+    % save(fullfile(dataDir, "TCLabSimTest1.mat"), "XTest", "UTest", "Ts");
 end
 
 %% Plot

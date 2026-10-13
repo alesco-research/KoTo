@@ -3,14 +3,15 @@ classdef MOESP
 %   Identifies (A, B, C, D) from input-output data with the MOESP
 %   algorithm and provides one-step prediction and warm-started forecasting.
 %
-%   obj = MOESP(Y, U, L, gamma=0.9, stateDim=[])
-%     Y         Cell array of ny-by-N_i output trajectories.
-%     U         Cell array of nu-by-N_i input trajectories, matching Y.
-%               For a single trajectory use MOESP({Y1}, {U1}, L).
+%   obj = MOESP(Y1, U1, Y2, U2, ..., L=100, gamma=0.9, stateDim=[])
+%     Yi        ny-by-N_i output trajectory.
+%     Ui        nu-by-N_i input trajectory matching Yi. Pairs (Yi, Ui) are
+%               passed as repeated arguments; at least one is required.
+%               From cell arrays: pairs = [Y(:)'; U(:)']; MOESP(pairs{:})
 %     L         Block-Hankel depth. Must exceed the state dimension, and
-%               every trajectory needs at least L samples.
-%     gamma     Cumulative singular-value threshold in (0, 1) used to select
-%               the model order (default 0.9).
+%               every trajectory needs at least L samples (default 100).
+%     gamma     Cumulative energy (squared singular values) threshold in
+%               (0, 1) used to select the model order (default 0.9).
 %     stateDim  Fixes the model order and overrides gamma.
 %
 %   Hankel matrices are built per trajectory and concatenated column-wise,
@@ -36,8 +37,8 @@ classdef MOESP
 %                     at the same time step. Only the last `memory` are used.
 %       uFuture       nu-by-T future inputs.
 %     The initial state is estimated by least squares from the past window.
-%     Returns an ny-by-(memory+T) matrix; the first `memory` columns are NaN
-%     and the rest are the predicted outputs for uFuture.
+%     Returns an ny-by-T matrix of predicted outputs for uFuture. The
+%     warm-up window used to estimate the initial state is discarded.
 
     properties (SetAccess=immutable)
         outputDim {mustBeInteger, mustBePositive} = [];
@@ -54,15 +55,23 @@ classdef MOESP
     end
 
     methods
-        function obj = MOESP(Y, U, L, options)
-            arguments
-                Y (:,:) cell {mustBeVector};
-                U (:,:) cell {mustBeVector, MOESP.mustBeEqualSize(Y, U)}
-                L (1,1) {mustBeInteger, mustBePositive}
-                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.9;
-                options.stateDim (:,:) {mustBeInteger, MOESP.mustBeValidLength(L, options.stateDim)} = [];
+        function obj = MOESP(Y, U, options)
+            arguments (Input, Repeating)
+                Y (:,:) {mustBeNumeric}
+                U (:,:) {mustBeNumeric, MOESP.mustBeEqualSize(Y, U)}
             end
-            [ny, nu] = deal(size(Y{1}, 1), size(U{1}, 1));
+            arguments (Input)
+                options.L (1,1) {mustBeInteger, mustBePositive} = 100;
+                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.9;
+                options.stateDim (:,:) {mustBeInteger} = [];
+            end
+            if isempty(Y)
+                error( ...
+                    "MOESP:NoData", ...
+                    "Provide at least one (Y, U) trajectory pair." ...
+                );
+            end
+            [ny, nu, L] = deal(size(Y{1}, 1), size(U{1}, 1), options.L);
 
             % Per-trajectory Hankel matrices, concatenated column-wise
             Hy = cellfun(@(y) MOESP.hankel(y, L), Y, UniformOutput=false);
@@ -80,9 +89,10 @@ classdef MOESP
 
             nx = options.stateDim;
             if isempty(nx)
-                nx = find(cumsum(obj.sigma) / sum(obj.sigma) > options.gamma, 1);
-                MOESP.mustBeValidLength(L, nx)
+                energy = obj.sigma.^2;
+                nx = find(cumsum(energy) / sum(energy) > options.gamma, 1);
             end
+            MOESP.mustBeValidLength(L, nx)
 
             obsL = Un(:, 1:nx) * diag(sqrt(obj.sigma(1:nx)));
 
@@ -193,13 +203,7 @@ classdef MOESP
         end
 
         function mustBeEqualSize(Y, U)
-            if numel(Y) ~= numel(U)
-                error( ...
-                    "MOESP:DimensionMismatch", ...
-                    "Y and U must have an equal number of trajectories." ...
-                );
-            end
-            if any(cellfun(@(y, u) size(y, 2) ~= size(u, 2), Y(:), U(:)))
+            if size(Y, 2) ~= size(U, 2)
                 error( ...
                     "MOESP:DimensionMismatch", ...
                     "Y and U must have trajectories of equal length." ...

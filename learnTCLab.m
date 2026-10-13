@@ -105,15 +105,14 @@ fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 %% Fit Koopman controllers
 fprintf("\n[3] Fit Koopman controllers...\n");
 [Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrain, UTrainScaled, VTrain);
+pairs = [
+    cellfun(@(x) x(:,1:end-1), XTrainScaled(:)', UniformOutput=false);
+    UTrainScaled(:)'
+];
 
 memoryPredictors = cell(1, 1);
 memoryPredictorNames = "MOESP";
-memoryPredictors{1} = MOESP( ...
-    cellfun(@(x) x(:,1:end-1), XTrainScaled, UniformOutput=false), ...
-    UTrainScaled, ...
-    100, ...
-    stateDim = 4 ...
-);
+memoryPredictors{1} = MOESP(pairs{:}, L=100, stateDim = 4);
 
 predictors = cell(4, 1);
 predictorNames = ["Linear"; "Bilinear"; "GeKo"; "KCF"];
@@ -196,8 +195,10 @@ for i = 1:numberOfTestRuns
         uWarm = UTestScaled{i}(:, 1:m);
         yWarm = XTestScaled{i}(:, 1:m);
         uFuture = UTestScaled{i}(:, m+1:end);
+
         XPredictedScaled = nan(stateDim, testHorizon + 1);
         XPredictedScaled(:, m+1:end-1) = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
+        
         XPredicted(i, :, :, j) = stateScaling.unscale(XPredictedScaled);
         scaledStateError(i, :, j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}).^2, 1, "omitnan") ...
