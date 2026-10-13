@@ -16,8 +16,10 @@ classdef MOESP
 %     inputDim, outputDim       Number of inputs and outputs.
 %     stateDim                  Identified model order.
 %     sigma                     Singular values used for order selection.
-%     memory                    Number of past samples required by forecast
-%                               (equal to stateDim).
+%     memory                    Number of past samples used by forecast to
+%                               estimate the initial state:
+%                               2*ceil(stateDim/outputDim), which makes the
+%                               estimation problem overdetermined.
 %     O, G                      Observability matrix and Toeplitz matrix of
 %                               Markov parameters over the memory window,
 %                               used to estimate the initial state.
@@ -27,18 +29,21 @@ classdef MOESP
 %
 %   Y = forecast(obj, uPast, yPast, uFuture)
 %     Warm-started multi-step output prediction.
-%       uPast, yPast  Last `memory` input and output samples (columns).
+%       uPast, yPast  Past input and output samples (columns). Both must
+%                     have the same number of columns, at least `memory`.
+%                     Only the most recent `memory` samples are used.
 %       uFuture       nu-by-T future inputs.
 %     The state at the start of the window is estimated by least squares
-%     from (uPast, yPast), then simulated through the window and the
-%     future inputs. Returns an ny-by-(memory+T) matrix Y, where the first
-%     `memory` columns (the warm-up window) are NaN and columns
-%     memory+1:end hold the predicted outputs for uFuture.
+%     from the last `memory` samples of (uPast, yPast), then simulated
+%     through that window and the future inputs. Returns an
+%     ny-by-(memory+T) matrix Y, where the first `memory` columns (the
+%     warm-up window) are NaN and columns memory+1:end hold the predicted
+%     outputs for uFuture.
 
     properties (SetAccess=immutable)
-        outputDim (1,1) {mustBeInteger, mustBePositive};
-        stateDim {mustBeInteger, mustBePositive};
-        inputDim {mustBeInteger, mustBePositive};
+        outputDim {mustBeInteger, mustBePositive} = [];
+        stateDim {mustBeInteger, mustBePositive} = [];
+        inputDim {mustBeInteger, mustBePositive} = [];
         A (:,:) {mustBeNumeric, mustBeMatrix};
         B (:,:) {mustBeNumeric, mustBeMatrix};
         C (:,:) {mustBeNumeric, mustBeMatrix};
@@ -55,8 +60,8 @@ classdef MOESP
                 Y (:,:) {mustBeNumeric}
                 U (:,:) {mustBeNumeric, MOESP.mustBeEqualSize(Y, U)}
                 L (1,1) {mustBeInteger, mustBePositive}
-                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.85;
-                options.stateDim {mustBeInteger, MOESP.mustBeValidLength(L, options.stateDim)} = [];
+                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.92;
+                options.stateDim (:,:) {mustBeInteger, MOESP.mustBeValidLength(L, options.stateDim)} = [];
             end
             [ny, nu] = deal(size(Y, 1), size(U, 1));
 
@@ -66,7 +71,7 @@ classdef MOESP
             Hu = MOESP.hankel(U, L) ./ sqrt(N);
 
             Hyp = Hy - (Hy / Hu) * Hu;
-            [Un, obj.sigma] = svd(Hyp, "econ", "vector");
+            [Un, obj.sigma] = svd(Hyp, "vector");
 
             nx = options.stateDim;
             if isempty(nx)
@@ -99,7 +104,7 @@ classdef MOESP
             obj.outputDim = ny;
             obj.stateDim = nx;
             obj.inputDim = nu;
-            obj.memory = nx;
+            obj.memory = 2*ceil(nx/ny);
             [obj.O, obj.G] = obj.observabilityAndToeplitz(obj.memory);
         end
 
@@ -117,19 +122,22 @@ classdef MOESP
             arguments
                 obj (1,1) MOESP;
                 uPast (:,:) {MOESP.mustMatch(obj, "inputDim", uPast), MOESP.mustMatchMemory(obj, uPast)};
-                yPast (:,:) {MOESP.mustMatch(obj, "outputDim", yPast), MOESP.mustMatchMemory(obj, yPast)};
+                yPast (:,:) {MOESP.mustMatch(obj, "outputDim", yPast), MOESP.mustBeEqualSize(yPast, uPast)};
                 uFuture (:,:) {MOESP.mustMatch(obj, "inputDim", uFuture)};
             end
-            [m, T] = deal(size(uPast, 2), size(uFuture, 2));
+            yPast = yPast(:,1 + end - obj.memory:end);
+            uPast = uPast(:,1 + end - obj.memory:end);
+            T = size(uFuture, 2);
             
+            % Estimate x0
             x = obj.O \ (yPast(:) - obj.G * uPast(:));
-
+            
             u = [uPast, uFuture];
-            Y = zeros(obj.outputDim, m + T);
-            for t = 1:(m + T)
+            Y = zeros(obj.outputDim, obj.memory + T);
+            for t = 1:(obj.memory + T)
                 [x, Y(:, t)] = obj.predict(x, u(:, t));
             end
-            Y(:, 1:m) = nan;
+            Y(:, 1:obj.memory) = nan;
         end
     end
 
@@ -137,27 +145,17 @@ classdef MOESP
         function [O, G] = observabilityAndToeplitz(obj, m)
             ny = obj.outputDim;
             nx = obj.stateDim;
-            nu = obj.inputDim;
 
             O = zeros(m * ny, nx);      % observability matrix
-            G = zeros(m * ny, m * nu);  % toeplitz matrix
-            H = zeros(ny, nu, m);
-            H(:, :, 1) = obj.D;
+            G = kron(eye(m), obj.D);    % toeplitz matrix
 
             CAk = obj.C;
-            for k = 1:m
+            for k = 1:(m-1)
                 O((k - 1) * ny + (1:ny), :) = CAk;
-                if k < m
-                    H(:, :, k + 1) = CAk * obj.B;
-                end
+                G = G + kron(diag(ones(m - k,1), -k), CAk * obj.B);
                 CAk = CAk * obj.A;
             end
-
-            for i = 1:m
-                for j = 1:i
-                    G((i - 1) * ny + (1:ny), (j - 1) * nu + (1:nu)) = H(:, :, i - j + 1);
-                end
-            end
+            O((m - 1) * ny + (1:ny), :) = CAk;
         end
     end
 
@@ -174,21 +172,21 @@ classdef MOESP
             if L <= stateDim
                 error( ...
                     "MOESP:HankelMatrixTooShort", ...
-                    "L %d was chosen to small. Must be larger than the " + ...
+                    "L %d is too small. Must be larger than the " + ...
                     "state dimension %d.", ...
                     L, stateDim ...    
                 )
             end
         end
 
-        function mustBeEqualSize(Z, W)
-            if size(Z, 2) ~= size(W, 2)
+        function mustBeEqualSize(Y, U)
+            if size(Y, 2) ~= size(U, 2)
                 error( ...
                     "MOESP:DimensionMismatch", ...
                     "Inputs must have the same number of samples. " + ...
                     "Received inputs of dimension %d and %d instead.", ...
-                    size(Z, 2), ...
-                    size(W, 2) ...
+                    size(Y, 2), ...
+                    size(U, 2) ...
             );
             end
         end
@@ -199,13 +197,13 @@ classdef MOESP
                     "MOESP:DimensionMismatch", ...
                     "Value must have %d row(s) to match the " + ... 
                     "%s dimension.", ...
-                    obj.(dim), dim ...
+                    obj.(dim), erase(dim, "Dim") ...
                 );
             end
         end
 
         function mustMatchMemory(obj, val)
-            if size(val, 2) ~= obj.memory
+            if size(val, 2) < obj.memory
                 error( ...
                     "MOESP:MemoryMismatch", ...
                     "Must provide %d past inputs and outputs to match the " + ... 
