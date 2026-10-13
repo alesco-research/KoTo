@@ -26,8 +26,8 @@ classdef Scale
     %   Scale:DimensionMismatch (row count differs from N).
 
     properties (GetAccess=public, SetAccess=immutable)
-        inputRange (:,2) {mustBeNumeric}
-        outputRange (:,2) {mustBeNumeric}
+        inputRange (:,2) {mustBeNumeric, Scale.mustBeValidRange}
+        outputRange (:,2) {mustBeNumeric, Scale.mustBeValidRange}
         transformation (:,:) {mustBeNumeric}
         inverseTransformation (:,:) {mustBeNumeric}
         shift (:,1) {mustBeNumeric}
@@ -40,8 +40,11 @@ classdef Scale
     methods
         function obj = Scale(inputRange, outputRange)
             arguments
-                inputRange (:,2) {mustBeNumeric, Scale.mustBeValidRange};
-                outputRange (:,2) {mustBeNumeric, Scale.mustBeValidRange} = [zeros(size(inputRange, 1), 1), ones(size(inputRange, 1), 1)];
+                inputRange;
+                outputRange = [
+                    zeros(size(inputRange, 1), 1), ...
+                    ones(size(inputRange, 1), 1)
+                ];
             end
             obj.dim = size(inputRange, 1);
             obj.inputRange = inputRange;
