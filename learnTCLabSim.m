@@ -121,6 +121,15 @@ fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 fprintf("\n[3] Fit Koopman controllers...\n");
 [Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrain, UTrainScaled, VTrain);
 
+memoryPredictors = cell(1, 1);
+memoryPredictorNames = "MOESP";
+memoryPredictors{1} = MOESP( ...
+    cellfun(@(x) x(:,1:end-1), XTrainScaled, UniformOutput=false), ...
+    UTrainScaled, ...
+    45, ...
+    stateDim = 4 ...
+);
+
 predictors = cell(4, 1);
 predictorNames = ["Linear"; "Bilinear"; "GeKo"; "KCF"];
 predictors{1} = LinearKoopman(Ypairs, Zpairs, Upairs, gamma=1E-4);
@@ -156,15 +165,16 @@ fprintf("\t%s", evalc("predictors{4}.getOperatorNorm();"))
 fprintf("\n[4] Evaluating prediction error...\n");
 testHorizon = 400;
 numberOfTestRuns = 3;
+numberOfPredictors = numel(memoryPredictors) + numel(predictors);
 
 testTime = (0:testHorizon) * tcLab.Ts;
 testFreqs = [100, 125, 257, 90];
 
 XTest = cell(numberOfTestRuns, 1);
 UTest = cell(numberOfTestRuns, 1);
-XPredicted = zeros(numberOfTestRuns, tcLab.stateDim, testHorizon + 1, numel(predictors));
+XPredicted = zeros(numberOfTestRuns, tcLab.stateDim, testHorizon + 1, numberOfPredictors);
 liftedStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
-scaledStateError = zeros(numberOfTestRuns, testHorizon + 1, numel(predictors));
+scaledStateError = zeros(numberOfTestRuns, testHorizon + 1, numberOfPredictors);
 for i = 1:numberOfTestRuns
     x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
     uTest = [
@@ -181,13 +191,27 @@ for i = 1:numberOfTestRuns
     VTest = inputLifting.lift(UTestScaled);
     
     testInputs = {UTestScaled, UTestScaled, VTest, VTest};
-    for j = 1:numel(predictors)
-        ZPredicted = predictors{j}.rollout(ZTest(:, 1), testInputs{j});
-        XPredictedScaled = stateLifting.project(ZPredicted);
+    % State-full predictors
+    for j = 1:numel(memoryPredictors)
+        m = memoryPredictors{j}.memory;
+        uWarm = UTestScaled(:, 1:m);
+        yWarm = XTestScaled(:, 1:m);
+        uFuture = UTestScaled(:, m+1:end);
+        XPredictedScaled = nan(tcLab.stateDim, testHorizon + 1);
+        XPredictedScaled(:, m+1:end-1) = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
         XPredicted(i, :, :, j) = stateScaling.unscale(XPredictedScaled);
-
-        liftedStateError(i, :, j) = sqrt(sum((ZPredicted - ZTest).^2, 1));
         scaledStateError(i, :, j) = sqrt( ...
+            sum((XPredictedScaled - XTestScaled).^2, 1, "omitnan") ...
+        );
+    end
+    % Regular predictors
+    for k = 1:numel(predictors)
+        ZPredicted = predictors{k}.rollout(ZTest(:, 1), testInputs{k});
+        XPredictedScaled = stateLifting.project(ZPredicted);
+        XPredicted(i, :, :, k+j) = stateScaling.unscale(XPredictedScaled);
+
+        liftedStateError(i, :, k) = sqrt(sum((ZPredicted - ZTest).^2, 1));
+        scaledStateError(i, :, k+j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled).^2, 1) ...
         );
     end
@@ -197,7 +221,7 @@ meanLiftedStateErrors = mean(liftedStateError, 2);
 meanScaledStateErrors = mean(scaledStateError, 2);
 
 fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
-fprintf("  %12s", predictorNames);
+fprintf("  %12s", [memoryPredictorNames(:); predictorNames(:)]);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
@@ -229,14 +253,17 @@ height = 8;
 tickFontSize = 8;
 labelFontSize = 10;
 legendFontSize = 10;
-markers = {'o', 's', '^', 'd'};
 markerIndices = unique(round(linspace(1, numel(testTime), 12)));
 colorscheme = [
     0.00 0.45 0.74;
     0.00 0.60 0.20;
     0.85 0.10 0.10;
-    0.75 0.00 0.75
+    0.75 0.00 0.75;
+    0.00 1.00 1.00
 ];
+set(groot, defaultTextInterpreter="latex");
+set(groot, defaultLegendInterpreter="latex");
+set(groot, defaultAxesTickLabelInterpreter="latex");
 
 figure(Name="Feature-space Rollout Error"), hold on, grid on, colororder(colorscheme)
 h = plot( ...
@@ -244,10 +271,9 @@ h = plot( ...
     LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(gca,'YScale','log');
-set(h, {'Marker'}, markers(:));
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$", Interpreter="latex")
-legend(predictorNames, Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$")
+legend(predictorNames, Location="best")
 if savePlots
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
@@ -264,10 +290,9 @@ h = plot( ...
     LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(gca,'YScale','log');
-set(h, {'Marker'}, markers(:));
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$", Interpreter="latex")
-legend(predictorNames, Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$")
+legend([memoryPredictorNames(:); predictorNames(:)], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
@@ -284,21 +309,19 @@ h = plot( ...
     testTime, squeeze(XPredicted(1, 1, :, :)) - 273.15, ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
-set(h, {'Marker'}, markers(:));
 plot(testTime, squeeze(XTest{1}(1, :)) - 273.15, "k--", LineWidth=1.5)
-ylabel("$x_1$ $[^\circ$C]", Interpreter="latex")
-legend([predictorNames; "True"], Location="best", Interpreter="latex")
+ylabel("$x_1$ $[^\circ$C]")
+legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
 
 subplot(2, 1, 2), hold on, grid on, colororder(colorscheme)
 h = plot( ...
     testTime, squeeze(XPredicted(1, 2, :, :)) - 273.15, ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
-set(h, {'Marker'}, markers(:));
 plot(testTime, squeeze(XTest{1}(2, :)) - 273.15, "k--", LineWidth=1.5)
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$x_2$ $[^\circ$C]", Interpreter="latex")
-legend([predictorNames; "True"], Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$x_2$ $[^\circ$C]")
+legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_trajectories.pdf', ...
         width=width, ...
@@ -310,16 +333,16 @@ if savePlots
 end
 
 figure(Name="Phase Portrait"), hold on, grid on, colororder(colorscheme)
-for i = 1:numel(predictors)
+for i = 1:numberOfPredictors
     plot(squeeze(XPredicted(1, 1, :, i)) - 273.15, ...
         squeeze(XPredicted(1, 2, :, i)) - 273.15, ...
-        LineWidth=1.5, MarkerSize=5, Marker=markers{i}, MarkerIndices=markerIndices);
+        LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices);
 end
 plot(squeeze(XTest{1}(1, :)) - 273.15, squeeze(XTest{1}(2, :)) - 273.15, "k--", LineWidth=1.5)
 plot(XTest{1}(1, 1) - 273.15, XTest{1}(2, 1) - 273.15, "ko", MarkerSize=10, MarkerFaceColor="y")
-xlabel("$x_1$ $[^\circ$C]", Interpreter="latex")
-ylabel("$x_2$ $[^\circ$C]", Interpreter="latex")
-legend([predictorNames; "True"; "$x_0$"], Location="best", Interpreter="latex")
+xlabel("$x_1$ $[^\circ$C]")
+ylabel("$x_2$ $[^\circ$C]")
+legend([memoryPredictorNames(:); predictorNames(:); "True"; "$x_0$"], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/phase_portrait.pdf', ...
         width=width, ...

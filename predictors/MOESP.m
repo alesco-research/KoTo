@@ -3,42 +3,41 @@ classdef MOESP
 %   Identifies (A, B, C, D) from input-output data with the MOESP
 %   algorithm and provides one-step prediction and warm-started forecasting.
 %
-%   obj = MOESP(Y, U, L, gamma=0.85, stateDim=[])
-%     Y         ny-by-N output data (samples as columns).
-%     U         nu-by-N input data (samples as columns).
-%     L         Block-Hankel depth. Must be larger than the state dimension.
+%   obj = MOESP(Y, U, L, gamma=0.9, stateDim=[])
+%     Y         Cell array of ny-by-N_i output trajectories.
+%     U         Cell array of nu-by-N_i input trajectories, matching Y.
+%               For a single trajectory use MOESP({Y1}, {U1}, L).
+%     L         Block-Hankel depth. Must exceed the state dimension, and
+%               every trajectory needs at least L samples.
 %     gamma     Cumulative singular-value threshold in (0, 1) used to select
-%               the model order (default 0.85).
+%               the model order (default 0.9).
 %     stateDim  Fixes the model order and overrides gamma.
+%
+%   Hankel matrices are built per trajectory and concatenated column-wise,
+%   so trajectories may differ in length and start from different states.
 %
 %   Properties (read-only):
 %     A, B, C, D                State-space matrices.
 %     inputDim, outputDim       Number of inputs and outputs.
 %     stateDim                  Identified model order.
 %     sigma                     Singular values used for order selection.
-%     memory                    Number of past samples used by forecast to
-%                               estimate the initial state:
-%                               2*ceil(stateDim/outputDim), which makes the
-%                               estimation problem overdetermined.
-%     O, G                      Observability matrix and Toeplitz matrix of
-%                               Markov parameters over the memory window,
-%                               used to estimate the initial state.
+%     memory                    Past samples used by forecast to estimate
+%                               the initial state: 2*ceil(stateDim/outputDim).
+%     O, G                      Observability and Toeplitz matrices over the
+%                               memory window, used to estimate the initial
+%                               state.
 %
 %   [x, y] = predict(obj, x0, u)
 %     One-step prediction: x = A*x0 + B*u, y = C*x0 + D*u.
 %
 %   Y = forecast(obj, uPast, yPast, uFuture)
 %     Warm-started multi-step output prediction.
-%       uPast, yPast  Past input and output samples (columns). Both must
-%                     have the same number of columns, at least `memory`.
-%                     Only the most recent `memory` samples are used.
+%       uPast, yPast  Past samples (columns), at least `memory` each, ending
+%                     at the same time step. Only the last `memory` are used.
 %       uFuture       nu-by-T future inputs.
-%     The state at the start of the window is estimated by least squares
-%     from the last `memory` samples of (uPast, yPast), then simulated
-%     through that window and the future inputs. Returns an
-%     ny-by-(memory+T) matrix Y, where the first `memory` columns (the
-%     warm-up window) are NaN and columns memory+1:end hold the predicted
-%     outputs for uFuture.
+%     The initial state is estimated by least squares from the past window.
+%     Returns an ny-by-(memory+T) matrix; the first `memory` columns are NaN
+%     and the rest are the predicted outputs for uFuture.
 
     properties (SetAccess=immutable)
         outputDim {mustBeInteger, mustBePositive} = [];
@@ -57,18 +56,24 @@ classdef MOESP
     methods
         function obj = MOESP(Y, U, L, options)
             arguments
-                Y (:,:) {mustBeNumeric}
-                U (:,:) {mustBeNumeric, MOESP.mustBeEqualSize(Y, U)}
+                Y (:,:) cell {mustBeVector};
+                U (:,:) cell {mustBeVector, MOESP.mustBeEqualSize(Y, U)}
                 L (1,1) {mustBeInteger, mustBePositive}
-                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.92;
+                options.gamma (1,1) {mustBeNumeric, mustBeBetween(options.gamma, 0, 1)} = 0.9;
                 options.stateDim (:,:) {mustBeInteger, MOESP.mustBeValidLength(L, options.stateDim)} = [];
             end
-            [ny, nu] = deal(size(Y, 1), size(U, 1));
+            [ny, nu] = deal(size(Y{1}, 1), size(U{1}, 1));
 
-            % Get scaled hankel matrices
-            N = size(Y, 2) - L + 1;
-            Hy = MOESP.hankel(Y, L) ./ sqrt(N);
-            Hu = MOESP.hankel(U, L) ./ sqrt(N);
+            % Per-trajectory Hankel matrices, concatenated column-wise
+            Hy = cellfun(@(y) MOESP.hankel(y, L), Y, UniformOutput=false);
+            Hu = cellfun(@(u) MOESP.hankel(u, L), U, UniformOutput=false);
+            Hy = [Hy{:}];
+            Hu = [Hu{:}];
+
+            % Scale by the total number of columns
+            N = size(Hy, 2);
+            Hy = Hy ./ sqrt(N);
+            Hu = Hu ./ sqrt(N);
 
             Hyp = Hy - (Hy / Hu) * Hu;
             [Un, obj.sigma] = svd(Hyp, "vector");
@@ -122,7 +127,7 @@ classdef MOESP
             arguments
                 obj (1,1) MOESP;
                 uPast (:,:) {MOESP.mustMatch(obj, "inputDim", uPast), MOESP.mustMatchMemory(obj, uPast)};
-                yPast (:,:) {MOESP.mustMatch(obj, "outputDim", yPast), MOESP.mustBeEqualSize(yPast, uPast)};
+                yPast (:,:) {MOESP.mustMatch(obj, "outputDim", yPast), MOESP.mustMatchMemory(obj, yPast)};
                 uFuture (:,:) {MOESP.mustMatch(obj, "inputDim", uFuture)};
             end
             yPast = yPast(:,1 + end - obj.memory:end);
@@ -137,7 +142,7 @@ classdef MOESP
             for t = 1:(obj.memory + T)
                 [x, Y(:, t)] = obj.predict(x, u(:, t));
             end
-            Y(:, 1:obj.memory) = nan;
+            Y(:, 1:obj.memory) = [];
         end
     end
 
@@ -164,6 +169,14 @@ classdef MOESP
             [d, T] = size(X);
             cols = T - L + 1;
 
+            if cols < 1
+                error( ...
+                    "MOESP:TrajectoryTooShort", ...
+                    "Trajectory has %d samples but needs at least L = %d.", ...
+                    T, L ...
+                );
+            end
+
             idx = (0:L-1)' + (1:cols);
             h = reshape(X(:, idx(:)), L * d, cols);
         end
@@ -180,14 +193,17 @@ classdef MOESP
         end
 
         function mustBeEqualSize(Y, U)
-            if size(Y, 2) ~= size(U, 2)
+            if numel(Y) ~= numel(U)
                 error( ...
                     "MOESP:DimensionMismatch", ...
-                    "Inputs must have the same number of samples. " + ...
-                    "Received inputs of dimension %d and %d instead.", ...
-                    size(Y, 2), ...
-                    size(U, 2) ...
-            );
+                    "Y and U must have an equal number of trajectories." ...
+                );
+            end
+            if any(cellfun(@(y, u) size(y, 2) ~= size(u, 2), Y(:), U(:)))
+                error( ...
+                    "MOESP:DimensionMismatch", ...
+                    "Y and U must have trajectories of equal length." ...
+                );
             end
         end
 

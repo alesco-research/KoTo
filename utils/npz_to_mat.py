@@ -12,7 +12,7 @@ plt.rcParams.update(
     }
 )
 
-SAMPLING_INTERVAL = 3
+SAMPLING_INTERVAL = 1
 data_folder = Path(__file__).parent.parent / "data/"
 reference_data = np.load(data_folder / "raw/TCLab_reference.npz")
 dt = SAMPLING_INTERVAL * reference_data["dt"]

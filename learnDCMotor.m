@@ -244,6 +244,9 @@ colorscheme = [
     0.85 0.10 0.10;
     0.75 0.00 0.75
 ];
+set(groot, defaultTextInterpreter="latex");
+set(groot, defaultLegendInterpreter="latex");
+set(groot, defaultAxesTickLabelInterpreter="latex");
 
 figure(Name="Feature-space Rollout Error"), hold on, grid on, colororder(colorscheme)
 h = plot( ...
@@ -252,9 +255,9 @@ h = plot( ...
 );
 set(gca,'YScale','log');
 set(h, {'Marker'}, markers(:));
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$", Interpreter="latex")
-legend(predictorNames, Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$")
+legend(predictorNames, Location="best")
 if savePlots
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
@@ -272,9 +275,9 @@ h = plot( ...
 );
 set(gca,'YScale','log');
 set(h, {'Marker'}, markers(:));
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$", Interpreter="latex")
-legend(predictorNames, Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$")
+legend(predictorNames, Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
@@ -293,8 +296,8 @@ h = plot( ...
 );
 set(h, {'Marker'}, markers(:));
 plot(testTime, squeeze(XTest{1}(1, :)), "k--", LineWidth=1.5)
-ylabel("$x_1$ [A]", Interpreter="latex")
-legend([predictorNames; "True"], Location="best", Interpreter="latex")
+ylabel("$x_1$ [A]")
+legend([predictorNames(:); "True"], Location="best")
 
 subplot(2, 1, 2), hold on, grid on, colororder(colorscheme)
 h = plot( ...
@@ -303,9 +306,9 @@ h = plot( ...
 );
 set(h, {'Marker'}, markers(:));
 plot(testTime, squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
-xlabel("Time [s]", Interpreter="latex")
-ylabel("$x_2$ [rad / s]", Interpreter="latex")
-legend([predictorNames; "True"], Location="best", Interpreter="latex")
+xlabel("Time [s]")
+ylabel("$x_2$ [rad / s]")
+legend([predictorNames(:); "True"], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_trajectories.pdf', ...
         width=width, ...
@@ -323,9 +326,9 @@ for i = 1:numel(predictors)
 end
 plot(squeeze(XTest{1}(1, :)), squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
 plot(XTest{1}(1, 1), XTest{1}(2, 1), "ko", MarkerSize=10, MarkerFaceColor="y")
-xlabel("$x_1$ [A]", Interpreter="latex")
-ylabel("$x_2$ [rad / s]", Interpreter="latex")
-legend([predictorNames; "True"; "$x_0$"], Location="best", Interpreter="latex")
+xlabel("$x_1$ [A]")
+ylabel("$x_2$ [rad / s]")
+legend([predictorNames(:); "True"; "$x_0$"], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/phase_portrait.pdf', ...
         width=width, ...
