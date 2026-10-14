@@ -6,21 +6,22 @@ initWorkspace;
 %% Set parameters
 rng(42); % for reproducibility
 savePlots = false;
-saveModels = false; 
-plotTrainData = true;
-plotTestData = true;
+saveModels = false;
+plotTrainData = false;
+plotTestData = false;
 trainData = "TCLabTrain1.mat";
 testData = "TCLabTest1.mat";
+simulate = false;
 
 %% Instantiate model, scaling, delay embedding and lifting
 tcLab = TCLab(measurementNoiseCov=5E-2*[1, 0.5; 0.5, 1]);
 [stateDim, inputDim] = deal(tcLab.stateDim, tcLab.inputDim);
-stateScaling = Scale([23, 70; 23, 70]); % [x1] = K, [x2] = K
+stateScaling = Scale([23, 70; 23, 70]); % [x1] = °C, [x2] = °C
 inputScaling = Scale([0, 100; 0, 100]); % [u1] = %, [u2] = %
 
-[stateDelay, inputDelay] = deal(2, 0);
+[stateDelay, inputDelay] = deal(5, 5);
 stateDelayEmbedding = DelayEmbedding(stateDim, stateDelay);
-inputDelayEmbedding = DelayEmbedding(inputDim, inputDelay);
+inputDelayEmbedding = DelayEmbedding(inputDim, inputDelay, 2);
 memory = max(stateDelayEmbedding.memory, inputDelayEmbedding.memory);
 dqm = memory - stateDelayEmbedding.memory;
 dwm = memory - inputDelayEmbedding.memory;
@@ -39,18 +40,18 @@ switch kernelType
     case "poly"
         stateLifting = @(~) PolynomialLift(stateDelayEmbedding.featureDim, 3);
 end
-inputLifting = PolynomialLift(inputDelayEmbedding.featureDim, 5);
+inputLifting = PolynomialLift(inputDelayEmbedding.featureDim, 1);
 
 switch "multi"
     case "one"
         getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=5000);
     case "multi"
-        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=200);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=400);
 end
 
 % KCF coupling parameters
 kcfCouplingRatio = 2;   % > 1
-kcfCouplingDegree = 2;  % <= polynomial lift degree
+kcfCouplingDegree = 1;  % <= polynomial lift degree
 
 dataDir = fullfile(fileparts(which("learnTCLab")), "data");
 trainPath = fullfile(dataDir, trainData);
@@ -58,7 +59,7 @@ testPath = fullfile(dataDir, testData);
 savePath = fullfile(dataDir, "TCLab" + upper(kernelType) + ".mat");
 
 %% Load/generate test data
-if isfile(trainPath)
+if ~simulate && isfile(trainPath)
     fprintf("\n[1] Load training trajectories...\n");
     load(trainPath, "XTrain", "UTrain", "Ts")
     numberOfTrajectorySamples = numel(XTrain);
@@ -128,11 +129,13 @@ W = cell2mat(WTrain');
 
 %% Lifting
 fprintf("\n[2] Lift training data...\n");
-centers = [];
-if any(kernelType == ["rbf", "rq", "matern"])
-    [~, centers] = kmeans(Q', numberOfCenters, MaxIter=300, Replicates=3);
+if ~isa(stateLifting, "LiftBase")
+    centers = [];
+    if any(kernelType == ["rbf", "rq", "matern"])
+        [~, centers] = kmeans(Q', numberOfCenters, MaxIter=300, Replicates=3);
+    end
+    stateLifting = stateLifting(centers');
 end
-stateLifting = stateLifting(centers');
 
 % Lift trajectories
 ZTrain = cellfun(@stateLifting.lift, QTrain, UniformOutput=false);
@@ -158,9 +161,9 @@ memoryPredictors{end+1} = MOESP(pairs{:}, L=100, stateDim = 4);
 memoryPredictorNames = cellfun(@(c) string(class(c)), memoryPredictors);
 
 predictors = {};
-predictors{end+1} = LinearKoopman(YPairs, ZPairs, WPairs, gamma=5E-4);
-predictors{end+1} = BilinearKoopman(YPairs, ZPairs, WPairs, gamma=5E-4);
-predictors{end+1} = GeKoKoopman(YPairs, ZPairs, VPairs, gamma=5E-4);
+predictors{end+1} = LinearKoopman(YPairs, ZPairs, WPairs, gamma=5E-3);
+predictors{end+1} = BilinearKoopman(YPairs, ZPairs, WPairs, gamma=5E-3);
+predictors{end+1} = GeKoKoopman(YPairs, ZPairs, VPairs, gamma=5E-3);
 
 if kernelType == "poly"
     % Get polynomial coupling
@@ -179,7 +182,7 @@ else
     kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
 end
 
-predictors{end+1} = KCFKoopman(YPairs, ZPairs, VPairs, couplingIdxs=kcfCouplingIdxs, gamma=5E-4);
+predictors{end+1} = KCFKoopman(YPairs, ZPairs, VPairs, couplingIdxs=kcfCouplingIdxs, gamma=5E-3);
 predictorNames = cellfun(@(c) erase(string(class(c)), "Koopman"), predictors);
 
 %% Evaluate operator norms
@@ -188,7 +191,7 @@ for i = 1:numel(predictors)
 end
 
 %% Load/generate test data
-if isfile(testPath)
+if ~simulate && isfile(testPath)
     fprintf("\n[4] Load test data...\n");
     load(testPath, "XTest", "UTest", "Ts")
     testHorizon = size(UTest{1}, 2);
