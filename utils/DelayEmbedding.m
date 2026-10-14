@@ -1,122 +1,134 @@
 classdef DelayEmbedding
     %DELAYEMBEDDING Time-delay (Hankel) embedding of multivariate time series.
-    %   obj = DELAYEMBEDDING(degree) stacks degree copies of the data,
-    %   each delayed by one sample.
+    %   obj = DELAYEMBEDDING(dim, degree) stacks degree+1 copies of the
+    %   data, each delayed by one sample. degree=0 returns the data as-is
+    %   (no delays added).
     %
-    %   obj = DELAYEMBEDDING(degree, stride) delays successive copies by
-    %   stride samples.
+    %   obj = DELAYEMBEDDING(dim, degree, stride) delays successive copies
+    %   by stride samples.
     %
     %   E = embed(obj, X)
     %       X is dim-by-T (columns are observations, rows are dimensions).
-    %       E is (degree*dim)-by-(T-memory+1). The column belonging to time
-    %       t is
-    %           [X(:,t); X(:,t-stride); ...; X(:,t-(degree-1)*stride)],
-    %       for t = memory, ..., T. The newest sample is the top block, so
-    %       the current state is E(1:dim,:). X must have at least memory
-    %       columns. Embed each experiment separately, never across
-    %       experiment boundaries.
+    %       E is ((degree+1)*dim)-by-(T-memory) for degree>0, or
+    %       dim-by-T for degree=0. The column at time t is
+    %           [X(:,t); X(:,t-stride); ...; X(:,t-degree*stride)],
+    %       for t = memory+1, ..., T. The newest sample is the top block,
+    %       so the current state is always E(1:dim,:). X must have at
+    %       least memory+1 columns. Embed each experiment separately,
+    %       never across experiment boundaries.
     %
-    %   X = unembed(obj, E, dim)
-    %       Return the current-sample block E(1:dim,:), i.e. the samples
-    %       at times memory, ..., T. E must have degree*dim rows.
+    %   X = unembed(obj, E)
+    %       Return the current-sample block E(1:dim,:).
     %
-    %   X = unembed(obj, E, dim, true)
-    %       Also reconstruct and prepend the first memory-1 samples from
+    %   X = unembed(obj, E, true)
+    %       Also reconstruct and prepend the first memory samples from
     %       the lagged blocks of E, recovering all T columns exactly (no
-    %       interpolation). E must have at least stride columns.
+    %       interpolation). Requires degree>0 and at least stride columns
+    %       in E.
     %
     %   Example:
     %       X  = randn(3, 50);
-    %       de = DelayEmbedding(4, 2);
-    %       E  = embed(de, X);               % 12-by-43
-    %       Y  = unembed(de, E, 3, true);    % equals X
+    %       de = DelayEmbedding(3, 3, 2);
+    %       E  = embed(de, X);               % 12-by-44
+    %       Y  = unembed(de, E, true);       % equals X
     %
     %   Properties (read-only):
-    %      degree - Number of stacked copies
-    %      stride - Delay between copies in samples (default 1)
-    %      memory - Samples spanned by one column, stride*(degree-1) + 1
+    %      degree     - Number of delays added (0 = no delays)
+    %      stride     - Delay between copies in samples (default 1)
+    %      memory     - Number of past samples required, stride*degree
+    %      dim        - Input dimensionality
+    %      featureDim - Output row count, dim*(degree+1)
 
     properties (GetAccess=public, SetAccess=immutable)
-        memory {mustBeInteger, mustBePositive}
-        stride {mustBeInteger, mustBePositive}
-        degree {mustBeInteger, mustBePositive}
+        memory (1,1) {mustBeInteger, mustBeNonnegative}
+        stride (1,1) {mustBeInteger, mustBePositive} = 1;
+        degree (1,1) {mustBeInteger, mustBeNonnegative}
+        dim (1,1) {mustBeInteger, mustBePositive} = 1;
+        featureDim (1,1) {mustBeInteger, mustBePositive} = 1;
     end
 
     methods
-        function obj = DelayEmbedding(degree, stride)
+        function obj = DelayEmbedding(dim, degree, stride)
             arguments
-                degree (1,1);
-                stride (1,1) = 1;
+                dim (1,1) {mustBeInteger, mustBePositive}
+                degree (1,1) {mustBeInteger, mustBeNonnegative}
+                stride (1,1) {mustBeInteger, mustBePositive} = 1;
             end
+            obj.dim = dim;
             obj.degree = degree;
             obj.stride = stride;
-            obj.memory = stride * (degree - 1) + 1;
+            obj.memory = stride * degree;
+            obj.featureDim = dim * (degree + 1);
         end
 
         function embedding = embed(obj, data)
             arguments
-                obj (1,1) DelayEmbedding
-                data (:,:) {mustBeNumeric, DelayEmbedding.mustBeEmbeddable(obj, data)}
+                obj  (1,1) DelayEmbedding
+                data (:,:) {DelayEmbedding.mustBeEmbeddable(obj, data)}
             end
-            [dim, T] = size(data);
-            
-            embedding = zeros(obj.degree * dim, T - obj.memory + 1);
-            for i = 0:obj.degree-1
-                cols = (obj.memory:T) - i * obj.stride;
-                embedding(i * dim + (1:dim), :) = data(:, cols);
+            T = size(data, 2);
+
+            embedding = zeros((obj.degree + 1) * obj.dim, T - obj.memory);
+            for i = 0:obj.degree
+                cols = (obj.memory + 1 : T) - i * obj.stride;
+                embedding(i * obj.dim + (1:obj.dim), :) = data(:, cols);
             end
         end
 
-        function data = unembed(obj, embedding, dim, reconstruct)
+        function data = unembed(obj, embedding, reconstruct)
             arguments
                 obj (1,1) DelayEmbedding
-                embedding (:,:) {mustBeNumeric}
-                dim (1,1) {mustBeInteger, DelayEmbedding.mustBeEmbedding(obj, embedding, dim)}
-                reconstruct (1,1) logical {DelayEmbedding.mustBeReconstructable(obj, embedding, reconstruct)} = false;
+                embedding (:,:) {DelayEmbedding.mustBeEmbedding(obj, embedding)}
+                reconstruct (1,1) logical = false;
             end
-            data = embedding(1:dim,:);
-            if ~reconstruct || obj.degree == 1
-                return                
+            data = embedding(1:obj.dim, :);
+
+            if reconstruct && obj.degree > 0
+                DelayEmbedding.mustBeReconstructable(obj, embedding);
+                H = embedding(obj.dim + 1:end, 1:obj.stride);
+                H = reshape(H, obj.dim, obj.degree, obj.stride);
+                H = flip(H, 2);
+                H = permute(H, [1 3 2]);
+                hist = reshape(H, obj.dim, []);
+                data = [hist, data];
             end
-            
-            H = embedding(dim + 1:end, 1:obj.stride);
-            H = reshape(H, dim, obj.degree - 1, obj.stride);
-            H = flip(H, 2);
-            H = permute(H, [1 3 2]);
-            hist = reshape(H, dim, []);
-            data = [hist, data];
         end
     end
 
     methods (Access=private, Hidden, Static)
-        function mustBeEmbeddable(obj, val)
-            if size(val,2) < obj.memory
-                error( ...
-                    "DelayEmbedding:TooFewData", ...
-                    "Data must have at least %d column(s) to be embedded.", ...
-                    obj.memory ...
-                );
-            end
-        end
-
-        function mustBeEmbedding(obj, embedding, dim)
-            if size(embedding,1) ~= obj.degree*dim
+        function mustBeEmbeddable(obj, data)
+            mustBeNumeric(data);
+            if size(data, 1) ~= obj.dim
                 error( ...
                     "DelayEmbedding:DimensionMismatch", ...
-                    "Row count must equal degree*dim %d*%d.", ...
-                    obj.degree, dim ...
-                );
+                    "Data has %d rows but dim=%d was specified.", ...
+                    size(data,1), obj.dim);
+            end
+            if size(data, 2) < obj.memory + 1
+                error( ...
+                    "DelayEmbedding:TooFewData", ...
+                    "Data must have at least memory+1 = %d column(s).", ...
+                    obj.memory + 1);
             end
         end
 
-        function mustBeReconstructable(obj, embedding, flag)
-            if flag && (size(embedding,2) < obj.stride)
+        function mustBeEmbedding(obj, embedding)
+            mustBeNumeric(embedding);
+            expected = (obj.degree + 1) * obj.dim;
+            if size(embedding, 1) ~= expected
+                error( ...
+                    "DelayEmbedding:DimensionMismatch", ...
+                    "Embedding must have (degree+1)*dim = %d rows, got %d.", ...
+                    expected, size(embedding,1));
+            end
+        end
+
+        function mustBeReconstructable(obj, embedding)
+            if size(embedding, 2) < obj.stride
                 error( ...
                     "DelayEmbedding:TooFewColumns", ...
-                    "Need at least stride = %d columns to reconstruct " + ...
-                    "the history.", ...
-                    obj.stride ...
-                );
+                    "Need at least stride=%d column(s) to reconstruct history.", ...
+                    obj.stride);
             end
         end
     end

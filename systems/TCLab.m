@@ -3,7 +3,7 @@ classdef TCLab < SystemBase
     %   M = TCLAB(Name=Value) creates a TCLab object. Optional properties,
     %   settable only at construction:
     %
-    %      Ta         - Ambient temperature [K] (default: 296.15)
+    %      Ta         - Ambient temperature [°C] (default: 23)
     %      U          - Heat transfer coeff. to ambient [W/m^2-K] (default: 5)
     %      Us         - Heat transfer coeff. between heaters [W/m^2-K] (default: 24)
     %      m          - Mass [kg] (default: 4E-3)
@@ -16,7 +16,7 @@ classdef TCLab < SystemBase
     %      Ts         - Step size [s] (default: 1)
     %      odeopts    - Options passed to ODE45
     %
-    %   State x = [T1; T2] in K. Input u = [u1; u2] are heater duty
+    %   State x = [T1; T2] in °C. Input u = [u1; u2] are heater duty
     %   cycles, clipped to [0,100].
     %
     %   X = SIMULATE(M,X0,U) returns the 2-by-(T+1) state trajectory for
@@ -30,10 +30,11 @@ classdef TCLab < SystemBase
         stateDim = 2;
         inputDim = 2;
         sigma = 5.67E-8;    % [W/m^2-K^4] Stefan-Boltzman constant
+        T0 = 273.15;        % [K]
     end
 
     properties (GetAccess=public, SetAccess=immutable)
-        Ta (1,1) {mustBeNumeric, mustBePositive} = 296.15;  % [K] ambient temperature
+        Ta (1,1) {mustBeNumeric} = 23;                      % [°C] ambient temperature
         U  (1,1) {mustBeNumeric, mustBePositive} = 5;       % [W/m^2-K] heat transfer coefficient
         Us (1,1) {mustBeNumeric, mustBePositive} = 24.0;    % [W/m^2-K] heat transfer coefficient between heaters
         m  (1,1) {mustBeNumeric, mustBePositive} = 4E-3;    % [kg] mass
@@ -59,15 +60,15 @@ classdef TCLab < SystemBase
         function dx = dynamics(obj, x, u)
             % Heat transfer between heaters
             convection = obj.Us * obj.As * diff(x, 1, 1);
-            radiation  = obj.emissivity * obj.sigma * obj.As * diff(x.^4, 1, 1);
+            radiation  = obj.emissivity * obj.sigma * obj.As * diff((obj.T0 + x).^4, 1, 1);
 
             % Energy balance
             dx = [ ...
                 obj.U * obj.A * (obj.Ta - x(1,:)) + ...
-                obj.emissivity * obj.sigma * obj.A * (obj.Ta^4 - x(1,:).^4) + ...
+                obj.emissivity * obj.sigma * obj.A * ((obj.T0 + obj.Ta)^4 - (obj.T0 + x(1,:)).^4) + ...
                 convection + radiation + obj.Q1max * clip(u(1,:), 0, 100) / 100;
                 obj.U * obj.A * (obj.Ta - x(2,:)) + ...
-                obj.emissivity * obj.sigma * obj.A * (obj.Ta^4 - x(2,:).^4) - ...
+                obj.emissivity * obj.sigma * obj.A * ((obj.T0 + obj.Ta)^4 - (obj.T0 + x(2,:)).^4) - ...
                 convection - radiation + obj.Q2max * clip(u(2,:), 0, 100) / 100 ...
             ] / (obj.m * obj.Cp);
         end
