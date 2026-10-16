@@ -5,10 +5,12 @@ description = "This is the TCLab tutorial on Koopman control methods."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "bokeh>=3.10.1",
     "h5py>=3.16.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.1",
     "scipy>=1.18.1",
+    "tclab>=1.0.0",
 ]
 
 [dependency-groups]

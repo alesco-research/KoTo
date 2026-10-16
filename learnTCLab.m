@@ -7,11 +7,11 @@ initWorkspace;
 rng(42); % for reproducibility
 savePlots = false;
 saveModels = false;
-plotTrainData = false;
-plotTestData = false;
+plotTrainData = true;
+plotTestData = true;
 trainData = "TCLabTrain1.mat";
 testData = "TCLabTest1.mat";
-simulate = false;
+simulate = true;
 
 %% Instantiate model, scaling, delay embedding and lifting
 tcLab = TCLab(measurementNoiseCov=5E-2*[1, 0.5; 0.5, 1]);
@@ -71,16 +71,16 @@ else
     numberOfTrajectorySamples = 5;
 
     xRange = [23, 70; 23, 70]; % physical operating ranges
-    trainTime  = (0:trainHorizon-1)' * TsTrain; % time vector
-    trainFreqs  = [150, 350, 55, 95, 155, 265]; % driving input frequencies
+    trainTime = (0:trainHorizon-1)' * TsTrain; % time vector
+    trainPeriods = 10:15:150; % driving input frequencies
 
     XTrain = cell(numberOfTrajectorySamples, 1);
     UTrain = cell(numberOfTrajectorySamples, 1);
     for l = 1:numberOfTrajectorySamples
         x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
         uTrain = [
-            1 + sum(sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)';
-            1 + sum(sin(trainFreqs .* trainTime + 2 * pi * rand(1,6)), 2)'
+            1 + sum(sin(2 * pi * (trainTime ./ trainPeriods + rand(1,10))), 2)';
+            1 + sum(sin(2 * pi * (trainTime ./ trainPeriods + rand(1,10))), 2)'
         ] * 25;
         UTrain{l} = clip(uTrain, 0, 100);
         [~, XTrain{l}] = tcLab.simulate(x0, UTrain{l});
@@ -208,15 +208,15 @@ else
     numberOfTestRuns = 3;
 
     testTime = (0:testHorizon) * tcLab.Ts;
-    testFreqs = [100, 125, 257, 90];
+    testPeriods = 10:15:150;
 
     XTest = cell(numberOfTestRuns, 1);
     UTest = cell(numberOfTestRuns, 1);
     for i = 1:numberOfTestRuns
         x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
         uTest = [
-            1 + sum(sin(testFreqs .* testTime(1:end - 1)' + 2 * pi * rand(1,4)), 2)';
-            1 + sum(sin(testFreqs .* testTime(1:end - 1)' + 2 * pi * rand(1,4)), 2)'
+            1 + sum(sin(2 * pi * (testTime(1:end - 1)' ./ testPeriods + rand(1,10))), 2)';
+            1 + sum(sin(2 * pi * (testTime(1:end - 1)' ./ testPeriods + rand(1,10))), 2)'
         ] * 25;
         UTest{i} = clip(uTest, 0, 100);
         XTest{i} = tcLab.simulate(x0, UTest{i});
