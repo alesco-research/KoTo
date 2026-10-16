@@ -9,9 +9,9 @@ savePlots = false;
 saveModels = false;
 plotTrainData = true;
 plotTestData = true;
-trainData = "TCLabTrain1.mat";
-testData = "TCLabTest1.mat";
-simulate = true;
+trainData = "TCLabTrain01.mat";
+testData = "TCLabTest01.mat";
+simulate = false;
 
 %% Instantiate model, scaling, delay embedding and lifting
 tcLab = TCLab(measurementNoiseCov=5E-2*[1, 0.5; 0.5, 1]);
@@ -58,7 +58,7 @@ trainPath = fullfile(dataDir, trainData);
 testPath = fullfile(dataDir, testData);
 savePath = fullfile(dataDir, "TCLab" + upper(kernelType) + ".mat");
 
-%% Load/generate test data
+%% Load/generate training data
 if ~simulate && isfile(trainPath)
     fprintf("\n[1] Load training trajectories...\n");
     load(trainPath, "XTrain", "UTrain", "Ts")
@@ -71,7 +71,7 @@ else
     numberOfTrajectorySamples = 5;
 
     xRange = [23, 70; 23, 70]; % physical operating ranges
-    trainTime = (0:trainHorizon-1)' * TsTrain; % time vector
+    trainTime = (0:trainHorizon - 1)' * TsTrain; % time vector
     trainPeriods = 10:15:150; % driving input frequencies
 
     XTrain = cell(numberOfTrajectorySamples, 1);
@@ -108,23 +108,23 @@ if plotTrainData
 end
 
 %% Scaling
-XTrainScaled = cellfun(@stateScaling.scale, XTrain, UniformOutput=false);
-UTrainScaled = cellfun(@inputScaling.scale, UTrain, UniformOutput=false);
+XTrainScaled = cellfun(@stateScaling.scale, XTrain, UniformOutput=0);
+UTrainScaled = cellfun(@inputScaling.scale, UTrain, UniformOutput=0);
 
 % Stack trajectories
-X = cell2mat(cellfun(@(x) x(:, 1:end-1), XTrainScaled, UniformOutput=false)');
+X = cell2mat(cellfun(@(x) x(:, 1:end-1), XTrainScaled, UniformOutput=0)');
 U = cell2mat(UTrainScaled');
 
 %% Delay embedding
-QTrain = cellfun(@stateDelayEmbedding.embed, XTrainScaled, UniformOutput=false);
-WTrain = cellfun(@inputDelayEmbedding.embed, UTrainScaled, UniformOutput=false);
+QTrain = cellfun(@stateDelayEmbedding.embed, XTrainScaled, UniformOutput=0);
+WTrain = cellfun(@inputDelayEmbedding.embed, UTrainScaled, UniformOutput=0);
 
 % Align embeddings
-QTrain = cellfun(@(e) e(:, 1 + dqm:end), QTrain, UniformOutput=false);
-WTrain = cellfun(@(e) e(:, 1 + dwm:end), WTrain, UniformOutput=false);
+QTrain = cellfun(@(e) e(:, 1 + dqm:end), QTrain, UniformOutput=0);
+WTrain = cellfun(@(e) e(:, 1 + dwm:end), WTrain, UniformOutput=0);
 
 % Stack trajectories
-Q = cell2mat(cellfun(@(q) q(:, 1:end-1), QTrain, UniformOutput=false)');
+Q = cell2mat(cellfun(@(q) q(:, 1:end-1), QTrain, UniformOutput=0)');
 W = cell2mat(WTrain');
 
 %% Lifting
@@ -138,11 +138,11 @@ if ~isa(stateLifting, "LiftBase")
 end
 
 % Lift trajectories
-ZTrain = cellfun(@stateLifting.lift, QTrain, UniformOutput=false);
-VTrain = cellfun(@inputLifting.lift, WTrain, UniformOutput=false);
+ZTrain = cellfun(@stateLifting.lift, QTrain, UniformOutput=0);
+VTrain = cellfun(@inputLifting.lift, WTrain, UniformOutput=0);
 
 % Stack trajectories
-Z = cell2mat(cellfun(@(z) z(:, 1:end-1), ZTrain, UniformOutput=false)');
+Z = cell2mat(cellfun(@(z) z(:, 1:end-1), ZTrain, UniformOutput=0)');
 V = cell2mat(VTrain');
 
 reprojectionError = stateLifting.fitProjection(Q, gamma=1e-4);
@@ -152,12 +152,12 @@ fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 fprintf("\n[3] Fit Koopman controllers...\n");
 [YPairs, ZPairs, WPairs, VPairs] = getPairs(ZTrain, WTrain, VTrain);
 pairs = [
-    cellfun(@(x) x(:,1:end-1), XTrainScaled(:)', UniformOutput=false);
+    cellfun(@(x) x(:,1:end-1), XTrainScaled(:)', UniformOutput=0);
     UTrainScaled(:)'
 ];
 
 memoryPredictors = {};
-memoryPredictors{end+1} = MOESP(pairs{:}, L=100, stateDim = 4);
+memoryPredictors{end+1} = MOESP(pairs{:}, L=50, stateDim = 4);
 memoryPredictorNames = cellfun(@(c) string(class(c)), memoryPredictors);
 
 predictors = {};
@@ -194,20 +194,19 @@ end
 if ~simulate && isfile(testPath)
     fprintf("\n[4] Load test data...\n");
     load(testPath, "XTest", "UTest", "Ts")
-    testHorizon = size(UTest{1}, 2);
     numberOfTestRuns = numel(XTest);
-
-    testTime = (0:testHorizon) * Ts;
+    testHorizons = cellfun(@(x) size(x, 2), XTest);
+    testTime = arrayfun(@(len) (0:len - 1) * Ts, testHorizons, UniformOutput=0);
 
     if TsTrain ~= Ts
         error("Train and test sampling time mismatch.")
     end
 else
     fprintf("\n[4] Generate testing trajectories...\n");
-    testHorizon = 400;
-    numberOfTestRuns = 3;
+    testHorizons = [400; 400; 400];
+    numberOfTestRuns = numel(testHorizons);
 
-    testTime = (0:testHorizon) * tcLab.Ts;
+    testTime = arrayfun(@(len) (0:len - 1) * tcLab.Ts, testHorizons, UniformOutput=0);
     testPeriods = 10:15:150;
 
     XTest = cell(numberOfTestRuns, 1);
@@ -215,8 +214,8 @@ else
     for i = 1:numberOfTestRuns
         x0 = xRange(:,1) + diff(xRange, 1, 2) .* rand(2,1);
         uTest = [
-            1 + sum(sin(2 * pi * (testTime(1:end - 1)' ./ testPeriods + rand(1,10))), 2)';
-            1 + sum(sin(2 * pi * (testTime(1:end - 1)' ./ testPeriods + rand(1,10))), 2)'
+            1 + sum(sin(2 * pi * (testTime{i}(1:end - 1)' ./ testPeriods + rand(1,10))), 2)';
+            1 + sum(sin(2 * pi * (testTime{i}(1:end - 1)' ./ testPeriods + rand(1,10))), 2)'
         ] * 25;
         UTest{i} = clip(uTest, 0, 100);
         XTest{i} = tcLab.simulate(x0, UTest{i});
@@ -224,20 +223,20 @@ else
 end
 
 % Scale trajectories
-XTestScaled = cellfun(@stateScaling.scale, XTest, UniformOutput=false)';
-UTestScaled = cellfun(@inputScaling.scale, UTest, UniformOutput=false)';
+XTestScaled = cellfun(@stateScaling.scale, XTest, UniformOutput=0)';
+UTestScaled = cellfun(@inputScaling.scale, UTest, UniformOutput=0)';
 
 % Delay embedding
-QTest = cellfun(@stateDelayEmbedding.embed, XTestScaled, UniformOutput=false);
-WTest = cellfun(@inputDelayEmbedding.embed, UTestScaled, UniformOutput=false);
+QTest = cellfun(@stateDelayEmbedding.embed, XTestScaled, UniformOutput=0);
+WTest = cellfun(@inputDelayEmbedding.embed, UTestScaled, UniformOutput=0);
 
 % Align embeddings
-QTest = cellfun(@(e) e(:, 1 + dqm:end), QTest, UniformOutput=false);
-WTest = cellfun(@(e) e(:, 1 + dwm:end), WTest, UniformOutput=false);
+QTest = cellfun(@(e) e(:, 1 + dqm:end), QTest, UniformOutput=0);
+WTest = cellfun(@(e) e(:, 1 + dwm:end), WTest, UniformOutput=0);
 
 % Lift trajectories
-ZTest = cellfun(@stateLifting.lift, QTest, UniformOutput=false);
-VTest = cellfun(@inputLifting.lift, WTest, UniformOutput=false);
+ZTest = cellfun(@stateLifting.lift, QTest, UniformOutput=0);
+VTest = cellfun(@inputLifting.lift, WTest, UniformOutput=0);
 
 if plotTestData
     plotTrajectories( ...
@@ -258,9 +257,9 @@ fprintf("\n[5] Evaluate prediction errors...\n");
 numberOfPredictors = numel(memoryPredictors) + numel(predictors);
 
 testInputs = {WTest, WTest, VTest, VTest};
-XPredicted = nan(numberOfTestRuns, stateDim, testHorizon + 1, numberOfPredictors);
-liftedStateError = nan(numberOfTestRuns, testHorizon + 1, numel(predictors));
-scaledStateError = nan(numberOfTestRuns, testHorizon + 1, numberOfPredictors);
+XPredicted = arrayfun(@(len) nan(stateDim, len, numberOfPredictors), testHorizons, UniformOutput=0);
+liftedStateError = arrayfun(@(len) nan(len, numel(predictors)), testHorizons, UniformOutput=0);
+scaledStateError = arrayfun(@(len) nan(len, numberOfPredictors), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     % State-full predictors
     for j = 1:numel(memoryPredictors)
@@ -271,8 +270,8 @@ for i = 1:numberOfTestRuns
         
         XPredictedScaled = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
 
-        XPredicted(i, :, m+1:end-1, j) = stateScaling.unscale(XPredictedScaled);
-        scaledStateError(i, m+1:end-1, j) = sqrt( ...
+        XPredicted{i}(:, m+1:end-1, j) = stateScaling.unscale(XPredictedScaled);
+        scaledStateError{i}(m+1:end-1, j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, m+1:end-1)).^2, 1, "omitnan") ...
         );
     end
@@ -282,24 +281,24 @@ for i = 1:numberOfTestRuns
         
         QPredicted = stateLifting.project(ZPredicted);
         XPredictedScaled = stateDelayEmbedding.unembed(QPredicted);
-        XPredicted(i, :, memory+1:end, k+j) = stateScaling.unscale(XPredictedScaled);
+        XPredicted{i}(:, memory+1:end, k+j) = stateScaling.unscale(XPredictedScaled);
 
-        liftedStateError(i, memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
-        scaledStateError(i, memory+1:end, k+j) = sqrt( ...
+        liftedStateError{i}(memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
+        scaledStateError{i}(memory+1:end, k+j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, memory+1:end)).^2, 1) ...
         );
     end
 end
 
-meanLiftedStateErrors = mean(liftedStateError, 2, "omitnan");
-meanScaledStateErrors = mean(scaledStateError, 2, "omitnan");
+meanLiftedStateErrors = cellfun(@(err) mean(err, 1, "omitnan"), liftedStateError, UniformOutput=0);
+meanScaledStateErrors = cellfun(@(err) mean(err, 1, "omitnan"), scaledStateError, UniformOutput=0);
 
 fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
 fprintf("  %12s", [memoryPredictorNames(:); predictorNames(:)]);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
-    fprintf("  %12.4e", meanScaledStateErrors(i, :));
+    fprintf("  %12.4e", meanScaledStateErrors{i});
     fprintf("\n");
 end
 
@@ -325,7 +324,7 @@ set(groot, defaultAxesTickLabelInterpreter="latex");
 
 figure(Name="Feature-space Rollout Error"), hold on, grid on, colororder(colorscheme)
 h = plot( ...
-    testTime, squeeze(liftedStateError(1, :, :)), ...
+    testTime{1}, squeeze(liftedStateError{1}(:, :)), ...
     LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(gca,'YScale','log');
@@ -344,7 +343,7 @@ end
 
 figure(Name="State-space Rollout Error"), hold on, grid on, colororder(colorscheme)
 h = plot( ...
-    testTime, squeeze(scaledStateError(1, :, :)), ...
+    testTime{1}, squeeze(scaledStateError{1}(:, :)), ...
     LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
 );
 set(gca,'YScale','log');
@@ -364,19 +363,19 @@ end
 figure(Name="State Trajectories")
 subplot(2, 1, 1), hold on, grid on, colororder(colorscheme)
 h = plot( ...
-    testTime, squeeze(XPredicted(1, 1, :, :)), ...
+    testTime{1}, squeeze(XPredicted{1}(1, :, :)), ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
-plot(testTime, squeeze(XTest{1}(1, :)), "k--", LineWidth=1.5)
+plot(testTime{1}, squeeze(XTest{1}(1, :)), "k--", LineWidth=1.5)
 ylabel("$x_1$ $[^\circ$C]")
 legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
 
 subplot(2, 1, 2), hold on, grid on, colororder(colorscheme)
 h = plot( ...
-    testTime, squeeze(XPredicted(1, 2, :, :)), ...
+    testTime{1}, squeeze(XPredicted{1}(2, :, :)), ...
     LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
 );
-plot(testTime, squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
+plot(testTime{1}, squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
 xlabel("Time [s]")
 ylabel("$x_2$ $[^\circ$C]")
 legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
@@ -392,8 +391,8 @@ end
 
 figure(Name="Phase Portrait"), hold on, grid on, colororder(colorscheme)
 for i = 1:numberOfPredictors
-    plot(squeeze(XPredicted(1, 1, :, i)), ...
-        squeeze(XPredicted(1, 2, :, i)), ...
+    plot(squeeze(XPredicted{1}(1, :, i)), ...
+        squeeze(XPredicted{1}(2, :, i)), ...
         LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices);
 end
 plot(squeeze(XTest{1}(1, :)), squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)

@@ -1,3 +1,6 @@
+import random
+from glob import iglob
+from itertools import count
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -13,17 +16,33 @@ plt.rcParams.update(
 )
 
 SAMPLING_INTERVAL = 1
-data_folder = Path(__file__).parent.parent / "data/"
-reference_data = np.load(data_folder / "raw/TCLab_reference.npz")
-dt = SAMPLING_INTERVAL * reference_data["dt"]
+FILE_NAME = "TCLAB_data_periodic_inputs"
+DATA_FOLDER = Path(__file__).parent.parent / "data/"
 
-datasets = {"Train": [1, 2, 3, 4, 5], "Test": [7, 6, 8]}
+
+def output_path(mode: str, counter: int) -> Path:
+    return DATA_FOLDER / DATA_FOLDER / f"TCLab{mode}{counter:02d}.mat"
+
+
+def shuffle_datasets(ratio=0.7):
+    idxs = [
+        (Path(s).stem.removeprefix(f"{FILE_NAME}_"))
+        for s in iglob(f"{FILE_NAME}_*.npz", root_dir=DATA_FOLDER / "raw")
+    ]
+    random.shuffle(idxs)
+    split = round(len(idxs) * ratio)
+    return idxs[:split], idxs[split:]
+
+
+train_idxs, test_idxs = shuffle_datasets()
+datasets = {"Train": train_idxs, "Test": test_idxs}
 for mode, idxs in datasets.items():
     XTrajs = np.empty(len(idxs), dtype=object)
     UTrajs = np.empty(len(idxs), dtype=object)
     for loc, idx in enumerate(idxs):
-        data = np.load(data_folder / f"raw/TCLab_data_u0_EDMDc_{idx}.npz")
+        data = np.load(DATA_FOLDER / "raw" / f"{FILE_NAME}_{idx}.npz")
 
+        dt = SAMPLING_INTERVAL * data["dt"]
         XFull = np.hstack([data["X"], data["Y"][:, -1:]]) + data["T_amb"]
         XTrajs[loc] = XFull[:, ::SAMPLING_INTERVAL]
 
@@ -34,8 +53,9 @@ for mode, idxs in datasets.items():
         )
 
     # Save to mat file
+    idx = next(c for c in count() if not output_path(mode, c).exists())
     savemat(
-        data_folder / f"TCLab{mode}1.mat",
+        output_path(mode, idx),
         {f"X{mode}": XTrajs, f"U{mode}": UTrajs, "Ts": dt},
         oned_as="column",
     )
