@@ -1,25 +1,29 @@
-function [fig, axs] = plotTrajectories(X, labels, options)
+function [fig, axs] = plotTrajectories(X, trajOpts, options)
 % PLOTTRAJECTORIES  Plot concatenated state and input trajectories in a
 % stacked tiled layout, with run boundaries marked by vertical lines.
 %
-%   [fig, axs] = plotTrajectories(X1, labels1, X2, labels2, ..., Name=Value)
+%   [fig, axs] = plotTrajectories(X1, opts1, X2, opts2, ..., Name=Value)
 %
 %   Inputs (repeating pairs):
-%       Xi      - Signal trajectories, cell array of n_i-by-N_j-by-p_i
-%                 arrays (one cell per run j). Each row gets its own tile;
-%                 the p_i pages are drawn as separate lines in that tile.
-%                 All Xi must contain the same number of runs.
-%       labelsi - Cell array with one y-label per row; use a string array
-%                 for multi-line labels, or {} for defaults
+%       Xi    - Signal trajectories, cell array of n_i-by-N_j-by-p_i
+%               arrays (one cell per run j). Each row gets its own tile;
+%               the p_i pages are drawn as separate lines in that tile.
+%               All Xi must contain the same number of runs.
+%       optsi - Per-trajectory options struct, see trajectoryOptions for
+%               the available fields. Missing fields take their defaults,
+%               so struct() gives an all-default trajectory.
 %
 %   Name-Value Options:
 %       dt          - Sampling time in seconds (default: 1)
 %       name        - Figure name (default: "Trajectories")
 %       axs         - Axes from a previous call to draw on top of; then no
-%                     new figure is created and name/colorscheme are
-%                     ignored. Labels may be {} to keep the existing ones.
-%       lineStyle   - Line style passed to plot (default: "-")
-%       colorscheme - n-by-3 RGB matrix used as color order
+%                     new figure is created and name/colorscheme/linestyles
+%                     are ignored. Labels may be {} to keep the existing ones.
+%       colorscheme - n-by-3 RGB matrix or palette name used as color order
+%                     (default: "gem12")
+%       linestyles  - Line styles or style-order name used as line style
+%                     order, cycled together with the colors
+%                     (default: "mixedstyles")
 %
 %   Outputs:
 %       fig - Figure handle
@@ -27,28 +31,23 @@ function [fig, axs] = plotTrajectories(X, labels, options)
 %
 %   Example:
 %       plotTrajectories( ...
-%           XTrain, {["Temp. 1" "$[^\circ$C]"], "Temp. 2"}, ...
-%           UTrain, {}, dt=Ts);
+%           XTrain, trajectoryOptions(labels={["Temp. 1" "$[^\circ$C]"]; "Temp. 2"}), ...
+%           UTrain, struct(), dt=Ts);
 %
-%       [~, axs] = plotTrajectories(XTest, {}, dt=Ts);
-%       plotTrajectories(XPred, {}, dt=Ts, axs=axs, lineStyle="--");
+%       [~, axs] = plotTrajectories(XTest, struct(), dt=Ts);
+%       plotTrajectories(XPred, trajectoryOptions(lineStyle="--"), dt=Ts, axs=axs);
 %
-%   See also: tiledlayout, plot, xline
+%   See also: trajectoryOptions, tiledlayout, plot, xline
     arguments (Repeating)
         X (:,:) cell {mustBeVector, mustBeValidTrajectory}
-        labels (:,:) cell
+        trajOpts (1,1) struct
     end
     arguments
         options.name (1,1) string = "Trajectories"
         options.dt (1,1) {mustBeNumeric, mustBePositive} = 1
+        options.colorscheme (:,:) {mustBeValidColorOrder} = "gem12"
+        options.linestyles (:,:) {mustBeValidLineStyleOrder} = "mixedstyles"
         options.axs (:,1) matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty
-        options.lineStyle (1,1) string = "-"
-        options.colorscheme (:,3) {mustBeNumeric, mustBeBetween(options.colorscheme, 0, 1)} = [ ...
-            0.00 0.45 0.74; ...
-            0.00 0.60 0.20; ...
-            0.85 0.10 0.10; ...
-            0.75 0.00 0.75 ...
-        ]
     end
     if isempty(X)
         error("Provide at least one trajectory to plot.");
@@ -56,25 +55,36 @@ function [fig, axs] = plotTrajectories(X, labels, options)
     if any(cellfun(@numel, X) ~= numel(X{1}))
         error("Inputs must have the same number of runs.");
     end
+    for i = 1:numel(trajOpts)
+        try
+            args = namedargs2cell(trajOpts{i});
+            trajOpts{i} = trajectoryOptions(args{:});
+        catch e
+            error("Invalid options for trajectory %d: %s", i, e.message);
+        end
+    end
 
+    % Get run lengths
     nRows = cellfun(@(x) size(x{1}, 1), X);
     runLen = cellfun(@(x) cellfun(@(run) size(run, 2), x(:)), X, UniformOutput=0);
     runLen = max([runLen{:}], [], 2);
     runStart = [0; cumsum(runLen(1:end-1))];
     runBounds = options.dt * runStart(2:end);
 
+    % Check axs
     overlay = ~isempty(options.axs);
     if overlay && numel(options.axs) ~= sum(nRows)
         error("axs must contain %d axes, one per signal row.", sum(nRows));
     end
 
+    % Check labels and displayName
     for i = 1:numel(X)
-        if isempty(labels{i})
-            if ~overlay
-                labels{i} = cellstr("Traj. " + i + "." + (1:nRows(i)));
-            end
-        elseif numel(labels{i}) ~= nRows(i)
+        if ~isempty(trajOpts{i}.labels) && numel(trajOpts{i}.labels) ~= nRows(i)
             error("Labels for signal %d must contain %d entries.", i, nRows(i));
+        end
+        nPages = size(X{i}{1}, 3);
+        if ~isempty(trajOpts{i}.displayName) && numel(trajOpts{i}.displayName) ~= nPages
+            error("displayName for signal %d must contain %d entries.", i, nPages);
         end
     end
 
@@ -84,34 +94,44 @@ function [fig, axs] = plotTrajectories(X, labels, options)
     else
         fig = figure(Name=options.name);
         tl = tiledlayout(fig, sum(nRows), 1, TileSpacing="compact", Padding="compact");
+        axs = arrayfun(@(x) nexttile(tl), 1:sum(nRows));
+        linestyleorder(fig, options.linestyles)
         colororder(fig, options.colorscheme)
-        axs = gobjects(sum(nRows), 1);
     end
 
-    k = 0;
+    j = 0;
     for i = 1:numel(X)
         Xcat = [X{i}{:}];
-        t = cellfun(@(run, t0) t0 + (0:size(run, 2) - 1), X{i}(:), num2cell(runStart), UniformOutput=false);
+        t = cellfun( ...
+            @(run, t0) t0 + (0:size(run, 2) - 1), X{i}(:), num2cell(runStart), ...
+            UniformOutput=false ...
+        );
         t = options.dt * [t{:}];
         for row = 1:nRows(i)
-            k = k + 1;
-            if ~overlay
-                axs(k) = nexttile(tl);
-                hold(axs(k), "on");
-                if size(Xcat, 3) > 1
-                    axs(k).ColorOrderIndex = 1;
-                else
-                    axs(k).ColorOrderIndex = k;
-                end
-                % When overlaying, the color order continues where it left off
+            j = j + 1;
+            hold(axs(j), "on");
+            if ~overlay && size(Xcat, 3) == 1
+                axs(j).ColorOrderIndex = j;
+                axs(j).LineStyleOrderIndex = j;
             end
             
-            plot(axs(k), t, squeeze(Xcat(row, :, :)), options.lineStyle, LineWidth=1.5);
-            if ~overlay && ~isempty(runBounds)
-                xline(axs(k), runBounds, "r", LineWidth=0.5, HandleVisibility="off");
+            hLines = plot( ...
+                axs(j), t, squeeze(Xcat(row, :, :)), LineWidth=trajOpts{i}.lineWidth ...
+            );
+            if ~isempty(trajOpts{i}.lineStyle)
+                set(hLines, "LineStyle", trajOpts{i}.lineStyle);
             end
-            if ~isempty(labels{i})
-                ylabel(axs(k), labels{i}{row}, Interpreter="latex");
+            if ~isempty(trajOpts{i}.color)
+                set(hLines, "Color", trajOpts{i}.color);
+            end
+            if ~isempty(trajOpts{i}.displayName)
+                set(hLines, {"DisplayName"}, cellstr(trajOpts{i}.displayName));
+            end
+            if ~overlay && ~isempty(runBounds)
+                xline(axs(j), runBounds, "r", LineWidth=0.5, HandleVisibility="off");
+            end
+            if ~isempty(trajOpts{i}.labels)
+                ylabel(axs(j), trajOpts{i}.labels{row});
             end
         end
     end
@@ -125,7 +145,32 @@ function mustBeValidTrajectory(X)
     nRows  = cellfun(@(x) size(x, 1), X(:)');
     nPages = cellfun(@(x) size(x, 3), X(:)');
     if any(nRows ~= nRows(1)) || any(nPages ~= nPages(1))
-        error("All runs must have the same number of rows and pages. " + ...
-            "Instead has rows %s and pages %s", mat2str(nRows), mat2str(nPages));
+        error( ...
+            "All runs must have the same number of rows and pages. " + ...
+            "Instead has rows %s and pages %s", ...
+            mat2str(nRows), mat2str(nPages) ...
+        );
+    end
+end
+
+function mustBeValidColorOrder(colors)
+    fig = figure(Visible="off");
+    try
+        colororder(fig, colors);
+        close(fig);
+    catch e
+        close(fig);
+        error(e.message);
+    end
+end
+
+function mustBeValidLineStyleOrder(lineStyles)
+    fig = figure(Visible="off");
+    try
+        linestyleorder(fig, lineStyles);
+        close(fig);
+    catch e
+        close(fig);
+        error(e.message);
     end
 end

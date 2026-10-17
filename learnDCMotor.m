@@ -10,6 +10,23 @@ saveModels = false;
 plotTrainData = true;
 plotTestData = true;
 
+% Plotting parameters
+margin = 0;
+width = 12;
+height = 8;
+tickFontSize = 8;
+labelFontSize = 10;
+legendFontSize = 10;
+colorscheme = [
+    0.00 0.45 0.74;
+    0.00 0.60 0.20;
+    0.85 0.10 0.10;
+    0.75 0.00 0.75
+];
+set(groot, defaultTextInterpreter="latex");
+set(groot, defaultLegendInterpreter="latex");
+set(groot, defaultAxesTickLabelInterpreter="latex");
+
 %% Instantiate model, scaling, lifting and predictor
 motor = DCMotor();
 stateScaling = Scale([0, 10; 0, 250]); % [x1 = A, [x2] = rad/s
@@ -81,11 +98,12 @@ fprintf( ...
 
 if plotTrainData
     plotTrajectories( ...
-        XTrain, { ...
+        XTrain, trajectoryOptions(labels={ ...
             ["Current $I$", "[A]"];
             ["Angular Velocity $\omega$", "[rad / s]"]
-        }, ...
-        UTrain, {["Input ", "[\%]"]} ...
+        }), ...
+        UTrain, trajectoryOptions(labels={["Input ", "[\%]"]}), ...
+        colorscheme=colorscheme ...
     );
 end
 
@@ -217,34 +235,20 @@ end
 
 if plotTestData
     plotTrajectories( ...
-        XTest, { ...
+        XTest, trajectoryOptions(labels={ ...
             ["Current $I$", "[A]"];
             ["Angular Velocity $\omega$", "[rad / s]"]
-        }, ...
+        }), ...
         cellfun(@(x) UTest, XTest, UniformOutput=false), ...
-        {["Input ", "[\%]"]} ...
+        trajectoryOptions(labels={["Input ", "[\%]"]}), ...
+        colorscheme=colorscheme ...
     );
 end
 
 %% Plot
 fprintf("\n[5] Plotting...\n");
-margin = 0;
-width = 12;
-height = 8;
-tickFontSize = 8;
-labelFontSize = 10;
-legendFontSize = 10;
 markers = {'o', 's', '^', 'd'};
 markerIndices = unique(round(linspace(1, numel(testTime), 12)));
-colorscheme = [
-    0.00 0.45 0.74;
-    0.00 0.60 0.20;
-    0.85 0.10 0.10;
-    0.75 0.00 0.75
-];
-set(groot, defaultTextInterpreter="latex");
-set(groot, defaultLegendInterpreter="latex");
-set(groot, defaultAxesTickLabelInterpreter="latex");
 
 figure(Name="Feature-space Rollout Error"), hold on, grid on, colororder(colorscheme)
 h = plot( ...

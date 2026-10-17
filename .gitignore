@@ -204,6 +204,7 @@ codegen/
 ################### User Files ###################
 */test.m
 /data/*.pdf
+/data/*.png
 /dcMotor_*.mat
 */dcMotor_*.mat
 /koopman_dcmotor_model_*.mat
