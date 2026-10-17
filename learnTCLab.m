@@ -95,15 +95,15 @@ fprintf( ...
 
 if plotTrainData
     plotTrajectories( ...
-        XTrain, UTrain, name="Train Trajectories", ...
-        stateLabels={
+        XTrain, {
             ["Temp. Heater 1", "$[^\circ$C]"];
             ["Temp. Heater 2", "$[^\circ$C]"]
         }, ...
-        inputLabels={
+        UTrain, {
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
-        } ...
+        }, ...
+        dt = TsTrain ...
     );
 end
 
@@ -240,12 +240,11 @@ VTest = cellfun(@inputLifting.lift, WTest, UniformOutput=0);
 
 if plotTestData
     plotTrajectories( ...
-        XTest, UTest, name="Test Trajectories", ...
-        stateLabels={
+        XTest, {
             ["Temp. Heater 1", "$[^\circ$C]"];
             ["Temp. Heater 2", "$[^\circ$C]"]
         }, ...
-        inputLabels={
+        UTest, {
             ["Input Heater 1",  "[\%]"];
             ["Input Heater 2",  "[\%]"]
         } ...
@@ -258,8 +257,8 @@ numberOfPredictors = numel(memoryPredictors) + numel(predictors);
 
 testInputs = {WTest, WTest, VTest, VTest};
 XPredicted = arrayfun(@(len) nan(stateDim, len, numberOfPredictors), testHorizons, UniformOutput=0);
-liftedStateError = arrayfun(@(len) nan(len, numel(predictors)), testHorizons, UniformOutput=0);
-scaledStateError = arrayfun(@(len) nan(len, numberOfPredictors), testHorizons, UniformOutput=0);
+liftedStateError = arrayfun(@(len) nan(1, len, numel(predictors)), testHorizons, UniformOutput=0);
+scaledStateError = arrayfun(@(len) nan(1, len, numberOfPredictors), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     % State-full predictors
     for j = 1:numel(memoryPredictors)
@@ -271,7 +270,7 @@ for i = 1:numberOfTestRuns
         XPredictedScaled = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
 
         XPredicted{i}(:, m+1:end-1, j) = stateScaling.unscale(XPredictedScaled);
-        scaledStateError{i}(m+1:end-1, j) = sqrt( ...
+        scaledStateError{i}(1, m+1:end-1, j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, m+1:end-1)).^2, 1, "omitnan") ...
         );
     end
@@ -283,15 +282,15 @@ for i = 1:numberOfTestRuns
         XPredictedScaled = stateDelayEmbedding.unembed(QPredicted);
         XPredicted{i}(:, memory+1:end, k+j) = stateScaling.unscale(XPredictedScaled);
 
-        liftedStateError{i}(memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
-        scaledStateError{i}(memory+1:end, k+j) = sqrt( ...
+        liftedStateError{i}(1, memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
+        scaledStateError{i}(1, memory+1:end, k+j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, memory+1:end)).^2, 1) ...
         );
     end
 end
 
-meanLiftedStateErrors = cellfun(@(err) mean(err, 1, "omitnan"), liftedStateError, UniformOutput=0);
-meanScaledStateErrors = cellfun(@(err) mean(err, 1, "omitnan"), scaledStateError, UniformOutput=0);
+meanLiftedStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), liftedStateError, UniformOutput=0);
+meanScaledStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), scaledStateError, UniformOutput=0);
 
 fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
 fprintf("  %12s", [memoryPredictorNames(:); predictorNames(:)]);
@@ -322,15 +321,14 @@ set(groot, defaultTextInterpreter="latex");
 set(groot, defaultLegendInterpreter="latex");
 set(groot, defaultAxesTickLabelInterpreter="latex");
 
-figure(Name="Feature-space Rollout Error"), hold on, grid on, colororder(colorscheme)
-h = plot( ...
-    testTime{1}, squeeze(liftedStateError{1}(:, :)), ...
-    LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
+[~, axs] = plotTrajectories( ...
+    liftedStateError, {["$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"]}, ...
+    name="Feature-space Rollout Error", ...
+    dt = TsTrain ...
 );
-set(gca,'YScale','log');
-xlabel("Time [s]")
-ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$")
-legend(predictorNames, Location="best")
+grid(axs, "on")
+set(axs,'YScale','log');
+legend(axs, predictorNames, Location="best")
 if savePlots
     exportPlot(gcf(), 'data/feature_space_error.pdf', ...
         width=width, ...
@@ -341,15 +339,14 @@ if savePlots
     );
 end
 
-figure(Name="State-space Rollout Error"), hold on, grid on, colororder(colorscheme)
-h = plot( ...
-    testTime{1}, squeeze(scaledStateError{1}(:, :)), ...
-    LineWidth=2, MarkerSize=5, MarkerIndices=markerIndices ...
+[~, axs] = plotTrajectories( ...
+    scaledStateError, {["$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"]}, ...
+    name="State-space Rollout Error", ...
+    dt = TsTrain ...
 );
-set(gca,'YScale','log');
-xlabel("Time [s]")
-ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$")
-legend([memoryPredictorNames(:); predictorNames(:)], Location="best")
+grid(axs, "on")
+set(axs,'YScale','log');
+legend(axs, [memoryPredictorNames(:); predictorNames(:)], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_space_error.pdf', ...
         width=width, ...
@@ -360,25 +357,17 @@ if savePlots
     );
 end
 
-figure(Name="State Trajectories")
-subplot(2, 1, 1), hold on, grid on, colororder(colorscheme)
-h = plot( ...
-    testTime{1}, squeeze(XPredicted{1}(1, :, :)), ...
-    LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
+[~, axs] = plotTrajectories( ...
+    XPredicted, {
+            ["Temp. Heater 1", "$[^\circ$C]"];
+            ["Temp. Heater 2", "$[^\circ$C]"]
+    }, ...
+    name="State Trajectories", ...
+    dt = TsTrain ...
 );
-plot(testTime{1}, squeeze(XTest{1}(1, :)), "k--", LineWidth=1.5)
-ylabel("$x_1$ $[^\circ$C]")
-legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
-
-subplot(2, 1, 2), hold on, grid on, colororder(colorscheme)
-h = plot( ...
-    testTime{1}, squeeze(XPredicted{1}(2, :, :)), ...
-    LineWidth=1.5, MarkerSize=5, MarkerIndices=markerIndices ...
-);
-plot(testTime{1}, squeeze(XTest{1}(2, :)), "k--", LineWidth=1.5)
-xlabel("Time [s]")
-ylabel("$x_2$ $[^\circ$C]")
-legend([memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
+plotTrajectories(XTest, {}, axs=axs, lineStyle="k--", dt=TsTrain);
+grid(axs, "on")
+legend(axs(1), [memoryPredictorNames(:); predictorNames(:); "True"], Location="best")
 if savePlots
     exportPlot(gcf(), 'data/state_trajectories.pdf', ...
         width=width, ...
