@@ -199,8 +199,8 @@ class TCLabPlotter:
         ``cursor`` is the number of samples a session has already seen.
         """
         with self._lock:
-            n_new = min(self._n_samples - cursor, len(self._history))
-            samples = list(islice(self._history, len(self._history) - n_new))
+            n_new = min(self._n_samples - cursor, self.buffer_length)
+            samples = list(islice(self._history, len(self._history) - n_new, None))
             cursor = self._n_samples
 
         return {c: [s[i] for s in samples] for i, c in enumerate(COLUMNS)}, cursor
