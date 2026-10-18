@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from functools import partial
 from itertools import islice
 from typing import Any
 
@@ -27,10 +28,10 @@ class TCLabPlotter:
     title : str, default="TCLab Live"
         Title of the browser tab.
     buffer_length : int, default=1000
-        Maximum number of samples kept in the history and per plot; older
-        samples roll over.
+        Maximum number of records kept in the history and per plot; older
+        records roll over.
     flush_rate : int, default=500
-        Interval in milliseconds at which new samples are pushed to each open
+        Interval in milliseconds at which new records are pushed to each open
         browser session.
     """
 
@@ -49,8 +50,7 @@ class TCLabPlotter:
         self._t0 = 0
         self._lock = threading.Lock()
         self._history: deque[tuple[float, ...]] = deque(maxlen=buffer_length)
-        self._n_samples = 0
-        self._stopped = False
+        self._n_records = 0
 
         self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -75,7 +75,7 @@ class TCLabPlotter:
         print(f"Live plot available at http://localhost:{self.port}")
 
     def update(self, temp1: float, temp2: float, inp1: float, inp2: float) -> None:
-        """Add one sample to the plot history.
+        """Add one record to the plot history.
 
         Parameters
         ----------
@@ -88,24 +88,23 @@ class TCLabPlotter:
         inp2 : float
             Power of heater 2 in percent.
         """
-        sample = (time.perf_counter() - self._t0, temp1, temp2, inp1, inp2)
+        record = (time.perf_counter() - self._t0, temp1, temp2, inp1, inp2)
         with self._lock:
-            self._history.append(sample)
-            self._n_samples += 1
+            self._history.append(record)
+            self._n_records += 1
 
     def stop(self) -> None:
         "Stop plotting and shut down the Bokeh server."
-        self._stopped = True
         if hasattr(self, "_server"):
             self._server.io_loop.add_callback(self._stop_server)
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
-    def _create_figure(self, doc: Document) -> None:
+    def _create_figures(self, doc: Document) -> None:
         "Build the plot layout for a new browser session."
         doc.title = self.title
 
-        data, cursor = self._samples_since(0)
+        data, cursor = self._get_data_since(0)
         source = ColumnDataSource(data)
 
         layout: dict[str, Any] = dict(
@@ -124,98 +123,62 @@ class TCLabPlotter:
             transform="translate(-50%, -50%)",
         )
 
-        p_temp = figure(
-            title=Title(text="Heater temperatures", text_font_size="15pt"),
-            name="temperatures",
-            **layout,
+        panels = (
+            ("Heater temperatures", "Temperature [°C]", "°C", ("T1", "T2"), False),
+            ("Heater inputs", "Power [%]", "%", ("U1", "U2"), True),
         )
-        p_temp.line(
-            "time",
-            "T1",
-            source=source,
-            color="#4878CF",
-            legend_label="T1 [°C]",
-            line_width=2,
-        )
-        p_temp.line(
-            "time",
-            "T2",
-            source=source,
-            color="#9B59B6",
-            legend_label="T2 [°C]",
-            line_width=2,
-        )
-        p_temp.yaxis.axis_label = "Temperature [°C]"
-        p_temp.legend.location = "top_left"
 
-        p_inp = figure(
-            title=Title(text="Heater inputs", text_font_size="15pt"),
-            x_range=p_temp.x_range,
-            name="inputs",
-            **layout,
-        )
-        p_inp.step(
-            "time",
-            "U1",
-            source=source,
-            color="#4878CF",
-            legend_label="U1 [%]",
-            line_width=2,
-            mode="after",
-        )
-        p_inp.step(
-            "time",
-            "U2",
-            source=source,
-            color="#9B59B6",
-            legend_label="U2 [%]",
-            line_width=2,
-            mode="after",
-        )
-        p_inp.yaxis.axis_label = "Power [%]"
-        p_inp.legend.location = "top_left"
-
-        for p in (p_temp, p_inp):
+        plots = []
+        for title, y_label, unit, columns, step in panels:
+            p = figure(title=Title(text=title, text_font_size="15pt"), **layout)
+            glyph = partial(p.step, mode="after") if step else p.line
+            for col, color in zip(columns, ("#4878CF", "#9B59B6"), strict=True):
+                glyph(
+                    "time",
+                    col,
+                    source=source,
+                    color=color,
+                    legend_label=f"{col} [{unit}]",
+                    line_width=2,
+                )
+            p.yaxis.axis_label = y_label
+            p.legend.location = "top_left"
             p.axis.axis_label_text_font_size = "14pt"
             p.axis.major_label_text_font_size = "12pt"
             p.legend.label_text_font_size = "12pt"
+            plots.append(p)
+
+        plots[1].x_range = plots[0].x_range
 
         def flush() -> None:
-            "Stream the samples this session has not seen yet."
+            "Stream the records this session has not seen yet."
             nonlocal cursor
-            if self._stopped:
-                return
-
-            new, cursor = self._samples_since(cursor)
+            new, cursor = self._get_data_since(cursor)
             if new["time"]:
                 source.stream(new, rollover=self.buffer_length)
 
-        doc.add_root(column(p_temp, p_inp, sizing_mode="stretch_width", styles=styles))
+        doc.add_root(column(*plots, sizing_mode="stretch_width", styles=styles))
         doc.add_periodic_callback(flush, period_milliseconds=self.flush_rate)
 
-    def _samples_since(self, cursor: int) -> tuple[dict[str, Any], int]:
-        """Return the samples recorded after ``cursor`` and update the cursor.
+    def _get_data_since(self, cursor: int) -> tuple[dict[str, Any], int]:
+        """Return all records from ``cursor`` on and update ``cursor``.
 
-        ``cursor`` is the number of samples a session has already seen.
+        ``cursor`` is the number of records a session has already seen.
         """
         with self._lock:
-            n_new = min(self._n_samples - cursor, self.buffer_length)
-            samples = list(islice(self._history, len(self._history) - n_new, None))
-            cursor = self._n_samples
+            n_new = min(self._n_records - cursor, self.buffer_length)
+            records = list(islice(self._history, len(self._history) - n_new, None))
+            cursor = self._n_records
 
-        return {c: [s[i] for s in samples] for i, c in enumerate(COLUMNS)}, cursor
+        return {c: [r[i] for r in records] for i, c in enumerate(COLUMNS)}, cursor
 
     def _run(self) -> None:
-        "Start and run the Bokeh server in a background thread"
-        self._server = Server({"/": self._create_figure}, port=self.port, num_procs=1)
+        "Start and run the Bokeh server in a background thread."
+        self._server = Server({"/": self._create_figures}, port=self.port)
         self._server.start()
-        self._server.io_loop.add_callback(self._open_browser)
-        self._server.io_loop.start()
-
-    def _open_browser(self) -> None:
-        "Open the plot in the browser and signal that the page is ready."
         self._server.show("/")
         self._ready.set()
+        self._server.io_loop.start()
 
     def _stop_server(self) -> None:
         "Stop the Tornado server and its event loop."
