@@ -68,16 +68,16 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
     nRows = cellfun(@(x) size(x{1}, 1), X);
     runLen = cellfun(@(x) cellfun(@(run) size(run, 2), x(:)), X, UniformOutput=0);
     runLen = max([runLen{:}], [], 2);
-    runStart = [0; cumsum(runLen(1:end-1))];
-    runBounds = options.dt * runStart(2:end);
+    time = options.dt * (0:sum(runLen) - 1);
+    separators = options.dt * cumsum(runLen(1:end-1));
 
-    % Check axs
+    % Check axes
     overlay = ~isempty(options.axs);
     if overlay && numel(options.axs) ~= sum(nRows)
         error("axs must contain %d axes, one per signal row.", sum(nRows));
     end
 
-    % Check labels and displayName
+    % Check labels and display names
     for i = 1:numel(X)
         if ~isempty(trajOpts{i}.labels) && numel(trajOpts{i}.labels) ~= nRows(i)
             error("Labels for signal %d must contain %d entries.", i, nRows(i));
@@ -101,12 +101,12 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
 
     j = 0;
     for i = 1:numel(X)
-        Xcat = [X{i}{:}];
-        t = cellfun( ...
-            @(run, t0) t0 + (0:size(run, 2) - 1), X{i}(:), num2cell(runStart), ...
+        Xcat = cellfun( ...
+            @(run, n) paddata(run, n, Dimension=2, FillValue=NaN), ...
+            X{i}(:), num2cell(runLen), ...
             UniformOutput=false ...
         );
-        t = options.dt * [t{:}];
+        Xcat = [Xcat{:}];
         for row = 1:nRows(i)
             j = j + 1;
             hold(axs(j), "on");
@@ -116,7 +116,7 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
             end
             
             hLines = plot( ...
-                axs(j), t, squeeze(Xcat(row, :, :)), LineWidth=trajOpts{i}.lineWidth ...
+                axs(j), time, squeeze(Xcat(row, :, :)), LineWidth=trajOpts{i}.lineWidth ...
             );
             if ~isempty(trajOpts{i}.lineStyle)
                 set(hLines, "LineStyle", trajOpts{i}.lineStyle);
@@ -127,8 +127,8 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
             if ~isempty(trajOpts{i}.displayName)
                 set(hLines, {"DisplayName"}, cellstr(trajOpts{i}.displayName));
             end
-            if ~overlay && ~isempty(runBounds)
-                xline(axs(j), runBounds, "r", LineWidth=0.5, HandleVisibility="off");
+            if ~overlay && ~isempty(separators)
+                xline(axs(j), separators, "r", LineWidth=0.5, HandleVisibility="off");
             end
             if ~isempty(trajOpts{i}.labels)
                 ylabel(axs(j), trajOpts{i}.labels{row});
