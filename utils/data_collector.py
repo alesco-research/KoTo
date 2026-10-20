@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 from plotter import TCLabPlotter
+from serial.tools import list_ports
 from tclab import TCLab, clock
 
 os.environ.pop("GTK_MODULES", None)
@@ -11,19 +12,51 @@ os.environ.pop("GTK_MODULES", None)
 EXPORT_NAME = "TCLAB_data_periodic_inputs"
 DATA_FOLDER = Path(__file__).parent.parent / "data/raw"
 INCLUDE_COOLDOWN = False
+TCLAB_USB_IDS = ["16D0:0613", "1A86:7523", "2341:8036", "2341:0043", "2A03"]
 
 
 def _out_path(counter: int) -> Path:
     return DATA_FOLDER / f"{EXPORT_NAME}_{counter:02d}.npz"
 
 
-with TCLab() as lab, TCLabPlotter() as plotter:
-    print(f"Temperature at start: {(lab.T1 + lab.T2) / 2}")
+def _get_ambient_temperature(measured: float) -> float:
+    print(f"\nCurrently measured temperature: {measured:.2f} °C")
+    print(
+        "\033[31m"
+        "NOTE: This only reflects the ambient temperature if the TCLab has not been "
+        "used within the last 30 minutes."
+        "\033[0m\n"
+    )
+    entered = input(f"Enter the ambient temperature in °C [{measured:.2f}]: ")
+    try:
+        temperature = np.float64(entered.replace(",", ".") or measured)
+    except ValueError as err:
+        raise ValueError(f"'{entered}' is not a number.") from err
+    if temperature < -20 or temperature > 40:
+        raise ValueError(f"Input temperature {temperature:.2f} °C is unrealistic.")
+    print(f"Ambient temperature set to {temperature:.2f} °C")
+    return temperature
+
+
+def find_tclab():
+    hits = [
+        p.device
+        for p in list_ports.comports()
+        if any(k in p.hwid.upper() for k in TCLAB_USB_IDS)
+    ]
+    if len(hits) != 1:
+        for p in list_ports.comports():
+            print(p.device, "|", p.description, "|", p.hwid)
+        raise RuntimeError(f"Expected exactly one TCLab, found {hits}")
+    return hits[0]
+
+
+with TCLab(find_tclab()) as lab, TCLabPlotter() as plotter:
     number_of_trajectories = 10
 
     dt = np.float64(1)  # [s]
     max_time = 1000  # [s]
-    T_amb = np.float64(22)  # [°C]
+    T_amb = _get_ambient_temperature((lab.T1 + lab.T2) / 2)  # [°C]
     times = np.atleast_2d(np.arange(0, max_time + dt, dt))  # [s]
 
     heatup_rng = np.array([[45, 70], [35, 45]])  # [°C]
