@@ -177,7 +177,8 @@ pairs = [
 ];
 
 memoryPredictors = {};
-memoryPredictors{end+1} = MOESP(pairs{:}, L=50, stateDim = 4);
+memoryPredictors{end+1} = MOESP(pairs{:}, stateDim=4, L=50);
+memoryPredictors{end+1} = FundamentalLemma(pairs{:}, memory=10, horizon=40);
 memoryPredictorNames = cellfun(@(c) string(class(c)), memoryPredictors);
 
 predictors = {};
@@ -205,7 +206,7 @@ end
 predictors{end+1} = KCFKoopman(YPairs, ZPairs, VPairs, couplingIdxs=kcfCouplingIdxs, gamma=5E-3);
 predictorNames = cellfun(@(c) erase(string(class(c)), "Koopman"), predictors);
 
-%% Evaluate operator norms
+% Evaluate operator norms
 for i = 1:numel(predictors)
     fprintf("\t%s", evalc("predictors{" + i + "}.getOperatorNorm();"))
 end
