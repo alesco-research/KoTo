@@ -56,11 +56,14 @@ classdef DCMotor < SystemBase
             end
         end
 
-        function dx = dynamics(obj, x, u)
+        function dx = dynamics(obj, x, u, p)
+            if nargin < 4
+                p = obj;
+            end
             fu = obj.inputNonlinearity(u);
             dx = [
-                -(obj.Ra / obj.La) .* x(1,:) - (obj.km / obj.La) .* x(2,:) .* fu + obj.ua / obj.La;
-                -(obj.B  / obj.J ) .* x(2,:) + (obj.km / obj.J ) .* x(1,:) .* fu - obj.tau_l / obj.J
+                -(p.Ra / p.La) .* x(1,:) - (p.km / p.La) .* x(2,:) .* fu + p.ua / p.La;
+                -(p.B  / p.J ) .* x(2,:) + (p.km / p.J ) .* x(1,:) .* fu - p.tau_l / p.J
             ];
         end
     end

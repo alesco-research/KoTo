@@ -5,7 +5,7 @@ initWorkspace;
 
 %% Set parameters
 rng(42); % for reproducibility
-simulate = false;
+simulate = true;
 savePlots = false;
 saveModels = false;
 plotTrainData = true;
@@ -175,10 +175,19 @@ pairs = [
     cellfun(@(x) x(:,1:end-1), XTrainScaled(:)', UniformOutput=0);
     UTrainScaled(:)'
 ];
+parameterBounds = struct( ...
+    U=[1, 15], Us=[1, 50], m=[1E-3, 1E-2], Q1max=[0.5,1.5], Q2max=[0.5,1.5] ...
+);
 
 memoryPredictors = {};
 memoryPredictors{end+1} = MOESP(pairs{:}, stateDim=4, L=50);
 memoryPredictors{end+1} = FundamentalLemma(pairs{:}, memory=10, horizon=40);
+memoryPredictors{end+1} = NLSF( ...
+    TCLab(Ts=TsTrain), parameterBounds, pairs{:}, ...
+    outputScaling=stateScaling, ...
+    inputScaling=inputScaling, ...
+    horizon = inf ...
+);
 memoryPredictorNames = cellfun(@(c) string(class(c)), memoryPredictors);
 
 predictors = {};
@@ -322,12 +331,13 @@ end
 meanLiftedStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), liftedStateError, UniformOutput=0);
 meanScaledStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), scaledStateError, UniformOutput=0);
 
+% Print MSE
 fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
-fprintf("  %12s", [memoryPredictorNames(:); predictorNames(:)]);
+fprintf("  %16s", [memoryPredictorNames(:); predictorNames(:)]);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
-    fprintf("  %12.4e", meanScaledStateErrors{i});
+    fprintf("  %16.4e", meanScaledStateErrors{i});
     fprintf("\n");
 end
 

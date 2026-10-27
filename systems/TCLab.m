@@ -23,6 +23,7 @@ classdef TCLab < SystemBase
     %   initial state X0 (2-by-1) and inputs U (2-by-T).
     %
     %   DX = DYNAMICS(M,X,U) returns dx/dt in K/s. X, U and DX are 2-by-N.
+    %   DX = DYNAMICS(M,X,U,P) uses the parameters in struct P instead.
     %
     %   See also SystemBase, ODE45.
 
@@ -57,20 +58,23 @@ classdef TCLab < SystemBase
             end
         end
 
-        function dx = dynamics(obj, x, u)
+        function dx = dynamics(obj, x, u, p)
+            if nargin < 4
+                p = obj;
+            end
             % Heat transfer between heaters
-            convection = obj.Us * obj.As * diff(x, 1, 1);
-            radiation  = obj.emissivity * obj.sigma * obj.As * diff((obj.T0 + x).^4, 1, 1);
+            convection = p.Us * p.As * diff(x, 1, 1);
+            radiation  = p.emissivity * obj.sigma * p.As * diff((obj.T0 + x).^4, 1, 1);
 
             % Energy balance
             dx = [ ...
-                obj.U * obj.A * (obj.Ta - x(1,:)) + ...
-                obj.emissivity * obj.sigma * obj.A * ((obj.T0 + obj.Ta)^4 - (obj.T0 + x(1,:)).^4) + ...
-                convection + radiation + obj.Q1max * clip(u(1,:), 0, 100) / 100;
-                obj.U * obj.A * (obj.Ta - x(2,:)) + ...
-                obj.emissivity * obj.sigma * obj.A * ((obj.T0 + obj.Ta)^4 - (obj.T0 + x(2,:)).^4) - ...
-                convection - radiation + obj.Q2max * clip(u(2,:), 0, 100) / 100 ...
-            ] / (obj.m * obj.Cp);
+                p.U * p.A * (p.Ta - x(1,:)) + ...
+                p.emissivity * obj.sigma * p.A * ((obj.T0 + p.Ta)^4 - (obj.T0 + x(1,:)).^4) + ...
+                convection + radiation + p.Q1max * clip(u(1,:), 0, 100) / 100;
+                p.U * p.A * (p.Ta - x(2,:)) + ...
+                p.emissivity * obj.sigma * p.A * ((obj.T0 + p.Ta)^4 - (obj.T0 + x(2,:)).^4) - ...
+                convection - radiation + p.Q2max * clip(u(2,:), 0, 100) / 100 ...
+            ] / (p.m * p.Cp);
         end
     end
 end

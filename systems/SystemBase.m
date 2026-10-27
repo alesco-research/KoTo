@@ -3,7 +3,13 @@ classdef SystemBase
     %   Models dx/dt = f(x,u) with a zero-order hold on the input and
     %   optional additive Gaussian process and measurement noise. Subclasses
     %   define the constant properties stateDim and inputDim and implement
-    %   dynamics(obj,x,u), which returns dx/dt.
+    %   dynamics(obj,x,u,params), which returns dx/dt.
+    %
+    %   The optional struct PARAMS overrides the model parameters stored in
+    %   the object without creating a new instance (e.g. for parameter
+    %   estimation). Its fields are named like the parameter properties and
+    %   must contain every parameter used by the dynamics. If omitted, the
+    %   object's own parameters are used.
     %
     %   Subclasses are responsible for their own constructors. The public
     %   properties (Ts, odeopts, noise covariances) can be accepted as
@@ -38,7 +44,7 @@ classdef SystemBase
     %
     %   SystemBase methods:
     %      simulate   - Simulate the system over an input sequence
-    %      dynamics   - State derivative f(x,u) (abstract)
+    %      dynamics   - State derivative f(x,u,params) (abstract)
     %
     %   See also ODE45, ODESET, RNG.
 
@@ -55,15 +61,15 @@ classdef SystemBase
     end
 
     methods (Abstract)
-        dx = dynamics(obj, x, u)
+        dx = dynamics(obj, x, u, params)
     end
 
     methods
         function [X, Y] = simulate(obj, x0, u)
             arguments
                 obj (1,1) SystemBase;
-                x0 (:,1) double {mustBeNumeric, SystemBase.mustMatchStateDim(obj, x0)};
-                u (:,:) double {mustBeNumeric, SystemBase.mustMatchInputDim(obj, u)};
+                x0 (:,1) double {mustBeNumeric, SystemBase.mustMatch(obj, "stateDim", x0)};
+                u (:,:) double {mustBeNumeric, SystemBase.mustMatch(obj, "inputDim", u)};
             end
             T = size(u, 2);
             X = zeros(obj.stateDim, T+1);
@@ -99,22 +105,13 @@ classdef SystemBase
     end
 
     methods (Static, Hidden, Access=protected)
-        function mustMatchStateDim(obj, val)
-            if size(val, 1) ~= obj.stateDim
+        function mustMatch(obj, dim, val)
+            if size(val, 1) ~= obj.(dim)
                 error( ...
                     "SystemBase:DimensionMismatch", ...
-                    "Value must have %d row(s).", ...
-                    obj.stateDim ...
-                );
-            end
-        end
-
-        function mustMatchInputDim(obj, val)
-            if size(val, 1) ~= obj.inputDim
-                error( ...
-                    "SystemBase:DimensionMismatch", ...
-                    "Value must have %d row(s).", ...
-                    obj.inputDim ...
+                    "Value must have %d row(s) to match the " + ...
+                    "%s dimension.", ...
+                    obj.(dim), erase(dim, "Dim") ...
                 );
             end
         end

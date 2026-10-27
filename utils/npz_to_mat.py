@@ -43,7 +43,7 @@ for mode, idxs in datasets.items():
         data = np.load(DATA_FOLDER / "raw" / f"{FILE_NAME}_{idx}.npz")
 
         dt = SAMPLING_INTERVAL * data["dt"]
-        XFull = np.hstack([data["X"], data["Y"][:, -1:]]) + data["T_amb"]
+        XFull = np.hstack([data["X"], data["Y"][:, -1:]])
         XTrajs[loc] = XFull[:, ::SAMPLING_INTERVAL]
 
         n_steps = XTrajs[loc].shape[1] - 1
