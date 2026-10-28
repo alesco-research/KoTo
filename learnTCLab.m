@@ -182,12 +182,12 @@ parameterBounds = struct( ...
 memoryPredictors = {};
 memoryPredictors{end+1} = FundamentalLemma(pairs{:}, memory=10, horizon=40);
 % memoryPredictors{end+1} = MOESP(pairs{:}, stateDim=4, L=50);
-memoryPredictors{end+1} = NLSF( ...
-     TCLab(Ts=TsTrain), parameterBounds, pairs{:}, ...
-     outputScaling=stateScaling, ...
-     inputScaling=inputScaling, ...
-     horizon = inf ...
-);
+% memoryPredictors{end+1} = NLSF( ...
+%      TCLab(Ts=TsTrain), parameterBounds, pairs{:}, ...
+%      outputScaling=stateScaling, ...
+%      inputScaling=inputScaling, ...
+%     horizon = inf ...
+% );
 memoryPredictorNames = cellfun(@(c) string(class(c)), memoryPredictors);
 
 predictors = {};
@@ -296,34 +296,55 @@ numberOfPredictors = numel(memoryPredictors) + numel(predictors);
 
 testInputs = {WTest, WTest, VTest, VTest};
 XPredicted = arrayfun(@(len) nan(stateDim, len, numberOfPredictors), testHorizons, UniformOutput=0);
-liftedStateError = arrayfun(@(len) nan(1, len, numel(predictors)), testHorizons, UniformOutput=0);
-scaledStateError = arrayfun(@(len) nan(1, len, numberOfPredictors), testHorizons, UniformOutput=0);
+liftedStateError = arrayfun(@(len) nan(2, len, numel(predictors)), testHorizons, UniformOutput=0);
+scaledStateError = arrayfun(@(len) nan(2, len, numberOfPredictors), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     % State-full predictors
     for j = 1:numel(memoryPredictors)
         m = memoryPredictors{j}.memory;
-        uWarm = UTestScaled{i}(:, 1:m);
+
+        % Multi-step predictions
+        [uWarm, uFuture] = deal(UTestScaled{i}(:, 1:m), UTestScaled{i}(:, m+1:end));
         yWarm = XTestScaled{i}(:, 1:m);
-        uFuture = UTestScaled{i}(:, m+1:end);
         
         XPredictedScaled = memoryPredictors{j}.forecast(uWarm, yWarm, uFuture);
 
         XPredicted{i}(:, m+1:end-1, j) = stateScaling.unscale(XPredictedScaled);
-        scaledStateError{i}(1, m+1:end-1, j) = sqrt( ...
+        scaledStateError{i}(2, m+1:end-1, j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, m+1:end-1)).^2, 1, "omitnan") ...
         );
+
+        % One-step prediction errors
+        for t = m+1:size(UTestScaled{i}, 2)
+            xNextScaled = memoryPredictors{j}.forecast( ...
+                UTestScaled{i}(:, t-m:t-1), XTestScaled{i}(:, t-m:t-1), UTestScaled{i}(:, t) ...
+            );
+            scaledStateError{i}(1, t, j) = sqrt( ...
+                sum((xNextScaled - XTestScaled{i}(:, t)).^2, 1, "omitnan") ...
+            );
+        end
     end
     % Regular predictors
     for k = 1:numel(predictors)
+        % Multi-step predictions
         ZPredicted = predictors{k}.rollout(ZTest{i}(:, 1), testInputs{k}{i});
         
         QPredicted = stateLifting.project(ZPredicted);
         XPredictedScaled = stateDelayEmbedding.unembed(QPredicted);
         XPredicted{i}(:, memory+1:end, k+j) = stateScaling.unscale(XPredictedScaled);
 
-        liftedStateError{i}(1, memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
-        scaledStateError{i}(1, memory+1:end, k+j) = sqrt( ...
+        liftedStateError{i}(2, memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
+        scaledStateError{i}(2, memory+1:end, k+j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, memory+1:end)).^2, 1) ...
+        );
+
+        % One-step prediction error
+        ZOneStep = predictors{k}.predict(ZTest{i}(:, 1:end-1), testInputs{k}{i});
+        XOneStepScaled = stateDelayEmbedding.unembed(stateLifting.project(ZOneStep));
+
+        liftedStateError{i}(1, memory+2:end, k) = sqrt(sum((ZOneStep - ZTest{i}(:, 2:end)).^2, 1));
+        scaledStateError{i}(1, memory+2:end, k+j) = sqrt( ...
+            sum((XOneStepScaled - XTestScaled{i}(:, memory+2:end)).^2, 1) ...
         );
     end
 end
@@ -332,25 +353,37 @@ meanLiftedStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), liftedStateError
 meanScaledStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), scaledStateError, UniformOutput=0);
 
 % Print MSE
-fprintf("\tPer-trajectory mean error (scaled state)\n\tNr.");
+fprintf("\tPer-trajectory single-step MSE\n\tNr.");
 fprintf("  %16s", [memoryPredictorNames(:); predictorNames(:)]);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
-    fprintf("  %16.4e", meanScaledStateErrors{i});
+    fprintf("  %16.4e", meanScaledStateErrors{i}(1,:));
+    fprintf("\n");
+end
+
+fprintf("\n\tPer-trajectory multi-step MSE\n\tNr.");
+fprintf("  %16s", [memoryPredictorNames(:); predictorNames(:)]);
+fprintf("\n");
+for i = 1:numberOfTestRuns
+    fprintf("\t%-3d", i);
+    fprintf("  %16.4e", meanScaledStateErrors{i}(2,:));
     fprintf("\n");
 end
 
 %% Plot
 fprintf("\n[6] Plotting...\n");
 [~, axs] = plotTrajectories( ...
-    liftedStateError, trajectoryOptions(labels={["$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"]}), ...
+    liftedStateError, trajectoryOptions(labels={
+        ["One-Step MSE", "$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"];
+        ["Multi-Step MSE", "$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"]
+    }), ...
     name="Feature-space Rollout Error", ...
     dt = TsTrain ...
 );
 grid(axs, "on")
 set(axs,'YScale','log');
-legend(axs, predictorNames, Location="best")
+legend(axs(1), predictorNames, Location="best")
 if savePlots
     exportPlot(gcf(), "data/feature_space_error.png", ...
         width=width, ...
@@ -362,13 +395,16 @@ if savePlots
 end
 
 [~, axs] = plotTrajectories( ...
-    scaledStateError, trajectoryOptions(labels={["$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"]}), ...
+    scaledStateError, trajectoryOptions(labels={
+        ["One-Step MSE", "$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"];
+        ["Multi-Step MSE", "$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$"]
+        }), ...
     name="State-space Rollout Error", ...
     dt = TsTrain ...
 );
 grid(axs, "on")
 set(axs,'YScale','log');
-legend(axs, [memoryPredictorNames(:); predictorNames(:)], Location="best")
+legend(axs(1), [memoryPredictorNames(:); predictorNames(:)], Location="best")
 if savePlots
     exportPlot(gcf(), "data/state_space_error.png", ...
         width=width, ...
