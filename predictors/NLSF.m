@@ -1,64 +1,46 @@
 classdef NLSF
 %NLSF Nonlinear least-squares fit of physical model parameters.
-%   Estimates bounded parameters of a SystemBase model by minimizing the
-%   multi-step prediction error on input-output data with LSQNONLIN and
-%   provides warm-started forecasting with the fitted model.
+%   Fits bounded parameters of a SystemBase model by minimizing the
+%   multi-step prediction error with LSQNONLIN.
 %
 %   obj = NLSF(system, bounds, Y1, U1, Y2, U2, ..., horizon=Inf,
 %              substeps=4, outputScaling=Scale(...),
 %              inputScaling=Scale(...), optimOptions=optimoptions("lsqnonlin"))
-%     system        SystemBase instance to be fitted (required). Parameters
-%                   not listed in bounds are fixed to its values. Noise is
-%                   ignored.
-%     bounds        Struct with one [lower, upper] field per fitted
-%                   parameter, named like the parameter property of system
-%                   (required). The initial guess is the value in system,
-%                   clipped to the bounds.
-%     Yi            ny-by-N_i output trajectory. The full state is assumed
-%                   to be measured, i.e. ny = system.stateDim.
-%     Ui            nu-by-N_i input trajectory matching Yi. Yi(:,k+1) is
-%                   the output after holding Ui(:,k) for Ts seconds. Pairs
-%                   (Yi, Ui) are passed as repeated arguments; at least one
-%                   is required. From cell arrays: pairs = [Y(:)'; U(:)'];
+%     system        SystemBase instance (required). Unbounded parameters
+%                   stay fixed; noise is ignored.
+%     bounds        Struct of [lower, upper] per fitted parameter, named
+%                   like the property of system (required). The initial
+%                   guess is the system's value clipped to the bounds.
+%     Yi, Ui        ny-by-N_i full-state outputs and nu-by-N_i inputs;
+%                   Yi(:,k+1) follows holding Ui(:,k) for Ts. At least one
+%                   pair. From cells: pairs = [Y(:)'; U(:)']; then
 %                   NLSF(system, bounds, pairs{:}, ...)
-%     horizon       Maximum number of prediction steps per trajectory
-%                   (default Inf). Each trajectory is rolled out once from
-%                   its first sample over min(N_i - 1, horizon) steps.
-%     substeps      Number of fixed RK4 steps per sampling interval Ts
-%                   (default 4). A fixed step makes the cost smooth in the
-%                   parameters, which keeps finite-difference gradients
-%                   accurate. Increase it for stiff or fast dynamics.
-%     outputScaling Scale mapping physical outputs (states) to the
-%                   coordinates of Yi (default: none).
-%     inputScaling  Scale mapping physical inputs to the coordinates of Ui
-%                   (default: none).
-%     optimOptions  Options passed to LSQNONLIN (default: Display="off").
+%     horizon       Max. prediction steps per trajectory, rolled out once
+%                   from its first sample (default Inf).
+%     substeps      Fixed RK4 steps per Ts (default 4). Keeps the cost
+%                   smooth for finite differences; increase if stiff.
+%     outputScaling Scale from physical states to Yi (default: none).
+%     inputScaling  Scale from physical inputs to Ui (default: none).
+%     optimOptions  LSQNONLIN options (default: Display="off").
 %
-%   The parameters are optimized after scaling them to [0, 1] with the
-%   bounds. The system is simulated in physical coordinates. If scalings
-%   are given, data, cost and forecasts are in scaled coordinates;
-%   otherwise everything is left unscaled. The cost is the sum of squared
-%   prediction errors over all trajectories, which are simulated in
-%   parallel.
+%   Parameters are optimized normalized to [0, 1]. Simulation is in
+%   physical coordinates; data, cost and forecasts are in the (possibly
+%   scaled) data coordinates. The cost sums squared errors over all
+%   trajectories, simulated in parallel.
 %
 %   Properties (read-only):
-%     system                    Instance of the class of the passed system
-%                               with the estimated parameters, step Ts and
-%                               no process or measurement noise.
-%     parameters                Struct of the estimated parameters.
-%     outputScaling             Output scaling, or empty if none.
-%     inputScaling              Input scaling, or empty if none.
-%     inputDim, outputDim       Number of inputs and outputs.
-%     memory                    Past samples used by forecast (always 1).
+%     system               Fitted noise-free system with step Ts.
+%     parameters           Struct of the estimated parameters.
+%     outputScaling        Output scaling, or empty.
+%     inputScaling         Input scaling, or empty.
+%     inputDim, outputDim  Number of inputs and outputs.
+%     memory               Past samples used by forecast (always 1).
 %
 %   Y = forecast(obj, uPast, yPast, uFuture)
-%     Warm-started multi-step output prediction.
-%       uPast, yPast  Past samples (columns), at least `memory` each, ending
-%                     at the same time step. Only the last is used.
-%       uFuture       nu-by-T future inputs.
-%     Arguments and outputs are in the coordinates of the training data.
-%     Calls simulate of the fitted system from yPast(:,end). Returns an
-%     ny-by-T matrix of predicted outputs for uFuture.
+%     Simulates the fitted system from yPast(:,end) under the nu-by-T
+%     inputs uFuture and returns the ny-by-T outputs, in data coordinates.
+%     uPast and yPast need at least `memory` columns ending at the same
+%     step.
 %
 %   Requires the Optimization Toolbox.
 %
@@ -148,9 +130,9 @@ classdef NLSF
     methods (Static, Hidden, Access=protected)
         function e = residual(z, system, p, names, lb, ub, ys, data)
             p = NLSF.merge(p, names, lb + z .* (ub - lb));
-            X = NLSF.rollout(system, p, data.x0, data.U, data.steps, data.substeps);
-            e = NLSF.scale(ys, X(:, data.active)) - data.Y;
-            e = e(:);
+            X = NLSF.rollout(system, p, data.x0, data.U, data.substeps);
+            e = NLSF.scale(ys, X(:, :)) - data.Y;
+            e = e(~isnan(data.Y));
         end
 
         function data = rolloutData(Y, U, h, ys, us)
@@ -175,29 +157,24 @@ classdef NLSF
                 data.U(:, i, k) = reshape(NLSF.unscale(us, U{i}(:, k)), nu, 1, []);
                 Yw(:, i, k) = reshape(Y{i}(:, k + 1), ny, 1, []);
             end
-            data.steps = steps;
-            data.active = (1:H) <= steps(:);
-            data.Y = Yw(:, data.active);
+            data.Y = Yw(:, :);
         end
 
-        function X = rollout(sys, p, X0, U, steps, substeps)
+        function X = rollout(sys, p, X0, U, substeps)
             H = size(U, 3);
             X = nan([size(X0), H]);
             x = X0;
             dt = sys.Ts / substeps;
             f = @(x, u) sys.dynamics(x, u, p);
             for k = 1:H
-                active = k <= steps(:)';
-                u = U(:, active, k);
-                xa = x(:, active);
+                u = U(:, :, k);
                 for s = 1:substeps
-                    k1 = f(xa, u);
-                    k2 = f(xa + dt / 2 * k1, u);
-                    k3 = f(xa + dt / 2 * k2, u);
-                    k4 = f(xa + dt * k3, u);
-                    xa = xa + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4);
+                    k1 = f(x, u);
+                    k2 = f(x + dt / 2 * k1, u);
+                    k3 = f(x + dt / 2 * k2, u);
+                    k4 = f(x + dt * k3, u);
+                    x = x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4);
                 end
-                x(:, active) = xa;
                 X(:, :, k) = x;
             end
         end
