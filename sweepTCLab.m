@@ -361,10 +361,10 @@ function [fig, lgd] = plotSweep(x, errors, predictorNames, xLabel, name)
     fig = figure(Name=name);
     tiledlayout(2, 2, TileSpacing="tight", Padding="tight");
     columnTitles = ["One-Step", "Multi-Step"];
-    rowLabels = [
-        "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$"
+    rowLabels = {
+        "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$";
         "$\max(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$"
-    ];
+    };
     numberOfPredictors = size(errors, 2);
     axs = gobjects(2, 2);
     for row = 1:2
@@ -376,11 +376,11 @@ function [fig, lgd] = plotSweep(x, errors, predictorNames, xLabel, name)
             set(gca, YScale="log");
             if row == 1, title(columnTitles(col)); end
             if row == 2, xlabel(xLabel); end
-            if col == 1, ylabel(rowLabels(row)); end
+            if col == 1, ylabel(rowLabels{row}); end
         end
     end
     linkaxes(axs(:, 1), "x");
     linkaxes(axs(:, 2), "x");
-    set(axs(1, :), "XTickLabel", []);
+    set(axs(1, :), XTickLabel=[]);
     lgd = legend(axs(1, 1), predictorNames, Orientation="horizontal");
 end
