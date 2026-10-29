@@ -113,6 +113,7 @@ function exportPlot(fig, filename, options)
         options.width-sum(options.margin(1:2)) ...
         options.height-sum(options.margin(3:4)) ...
     ]);
+    drawnow
 
     % Export plot
     if options.formattype==""
