@@ -6,7 +6,7 @@ initWorkspace;
 %% Set parameters
 rng(42); % for reproducibility
 simulate = false;
-savePlots = false;
+savePlots = true;
 saveModels = false;
 plotTrainData = true;
 plotTestData = true;
@@ -30,8 +30,8 @@ tcLab = TCLab(measurementNoiseCov=5E-2*[1, 0.5; 0.5, 1]);
 stateScaling = Scale([23, 70; 23, 70]); % [x1] = °C, [x2] = °C
 inputScaling = Scale([0, 100; 0, 100]); % [u1] = %, [u2] = %
 
-[stateDelay, inputDelay] = deal(5, 5);
-stateDelayEmbedding = DelayEmbedding(stateDim, stateDelay);
+[stateDelay, inputDelay] = deal(0, 12);
+stateDelayEmbedding = DelayEmbedding(stateDim, stateDelay, 2);
 inputDelayEmbedding = DelayEmbedding(inputDim, inputDelay, 2);
 memory = max(stateDelayEmbedding.memory, inputDelayEmbedding.memory);
 dqm = memory - stateDelayEmbedding.memory;
@@ -46,18 +46,18 @@ switch kernelType
         stateLifting = @(centers) RationalQuadraticLift(stateDelayEmbedding.featureDim, 1, 5, centers);
         numberOfCenters = 300;
     case "matern"
-        stateLifting = @(centers) Matern52Lift(stateDelayEmbedding.featureDim, 1, centers);
+        stateLifting = @(centers) Matern52Lift(stateDelayEmbedding.featureDim, 0.3, centers);
         numberOfCenters = 300;
     case "poly"
         stateLifting = @(~) PolynomialLift(stateDelayEmbedding.featureDim, 3);
 end
 inputLifting = PolynomialLift(inputDelayEmbedding.featureDim, 1);
 
-switch "multi"
+switch "one"
     case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=5000);
+        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=40000);
     case "multi"
-        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=100, maxNumberOfWindows=400);
+        getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=70, maxNumberOfWindows=800);
 end
 
 % KCF coupling parameters
@@ -296,7 +296,7 @@ numberOfPredictors = numel(memoryPredictors) + numel(predictors);
 
 testInputs = {WTest, WTest, VTest, VTest};
 XPredicted = arrayfun(@(len) nan(stateDim, len, numberOfPredictors), testHorizons, UniformOutput=0);
-liftedStateError = arrayfun(@(len) nan(2, len, numel(predictors)), testHorizons, UniformOutput=0);
+liftedStateError = arrayfun(@(len) nan(2, len, numberOfPredictors), testHorizons, UniformOutput=0);
 scaledStateError = arrayfun(@(len) nan(2, len, numberOfPredictors), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     % State-full predictors
@@ -314,6 +314,14 @@ for i = 1:numberOfTestRuns
             sum((XPredictedScaled - XTestScaled{i}(:, m+1:end-1)).^2, 1, "omitnan") ...
         );
 
+        % Lift predicted states (warm-start window provides the delays)
+        QPredicted = stateDelayEmbedding.embed([yWarm, XPredictedScaled]);
+        ZPredicted = stateLifting.lift(QPredicted(:, 1 + dqm:end));
+        liftedStateError{i}(2, memory+1:end-1, j) = sqrt( ...
+            sum((ZPredicted - ZTest{i}(:, 1:end-1)).^2, 1, "omitnan") ...
+        );
+        liftedStateError{i}(2, 1:m, j) = nan;
+
         % One-step prediction errors
         for t = m+1:size(UTestScaled{i}, 2)
             xNextScaled = memoryPredictors{j}.forecast( ...
@@ -324,7 +332,7 @@ for i = 1:numberOfTestRuns
             );
         end
     end
-    % Regular predictors
+    % Koopman predictors
     for k = 1:numel(predictors)
         % Multi-step predictions
         ZPredicted = predictors{k}.rollout(ZTest{i}(:, 1), testInputs{k}{i});
@@ -333,7 +341,7 @@ for i = 1:numberOfTestRuns
         XPredictedScaled = stateDelayEmbedding.unembed(QPredicted);
         XPredicted{i}(:, memory+1:end, k+j) = stateScaling.unscale(XPredictedScaled);
 
-        liftedStateError{i}(2, memory+1:end, k) = sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
+        liftedStateError{i}(2, memory+1:end, k+j) =sqrt(sum((ZPredicted - ZTest{i}).^2, 1));
         scaledStateError{i}(2, memory+1:end, k+j) = sqrt( ...
             sum((XPredictedScaled - XTestScaled{i}(:, memory+1:end)).^2, 1) ...
         );
@@ -342,7 +350,7 @@ for i = 1:numberOfTestRuns
         ZOneStep = predictors{k}.predict(ZTest{i}(:, 1:end-1), testInputs{k}{i});
         XOneStepScaled = stateDelayEmbedding.unembed(stateLifting.project(ZOneStep));
 
-        liftedStateError{i}(1, memory+2:end, k) = sqrt(sum((ZOneStep - ZTest{i}(:, 2:end)).^2, 1));
+        liftedStateError{i}(1, memory+2:end, k+j) =sqrt(sum((ZOneStep - ZTest{i}(:, 2:end)).^2, 1));
         scaledStateError{i}(1, memory+2:end, k+j) = sqrt( ...
             sum((XOneStepScaled - XTestScaled{i}(:, memory+2:end)).^2, 1) ...
         );
@@ -383,7 +391,7 @@ fprintf("\n[6] Plotting...\n");
 );
 grid(axs, "on")
 set(axs,'YScale','log');
-legend(axs(1), predictorNames, Location="best")
+legend(axs(1), [memoryPredictorNames(:); predictorNames(:)], Location="eastoutside")
 if savePlots
     exportPlot(gcf(), "data/feature_space_error.png", ...
         width=width, ...
@@ -404,7 +412,7 @@ end
 );
 grid(axs, "on")
 set(axs,'YScale','log');
-legend(axs(1), [memoryPredictorNames(:); predictorNames(:)], Location="best")
+legend(axs(1), [memoryPredictorNames(:); predictorNames(:)], Location="eastoutside")
 if savePlots
     exportPlot(gcf(), "data/state_space_error.png", ...
         width=width, ...
