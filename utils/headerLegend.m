@@ -25,6 +25,8 @@ function headerLegend(lgd, options)
 %                    Unchanged if omitted. (numeric)
 %       shrink     - Shrink the remaining figure content by the legend
 %                    height to avoid overlap. false (default) | logical
+%       gap        - Space between legend and shrunk content, in points.
+%                    2 (default) | numeric
 %
 %   Example:
 %       lgd = legend(axs(1), names, Orientation="horizontal");
@@ -41,6 +43,7 @@ function headerLegend(lgd, options)
         options.fontSize {mustBeNumeric} = NaN
         options.lineLength {mustBeNumeric} = NaN
         options.shrink (1,1) logical = false
+        options.gap (1,1) {mustBeNumeric} = 2
     end
     fig = ancestor(lgd, "figure");
 
@@ -60,7 +63,14 @@ function headerLegend(lgd, options)
     end
     set(lgd, Units="normalized");
     drawnow
-    legendHeight = lgd.Position(4);
+
+    % Legend area height normalized to the figure, including the edge
+    % padding and the gap towards the remaining content
+    figPixels = getpixelposition(fig);
+    lgdPixels = getpixelposition(lgd, true);
+    pad = 1 / figPixels(4);
+    gap = options.gap * get(groot, "ScreenPixelsPerInch") / 72 / figPixels(4);
+    legendHeight = lgdPixels(4) / figPixels(4) + pad + gap;
 
     % Shrink remaining content (axes, tiled layouts) out of the legend area
     if options.shrink
@@ -89,8 +99,6 @@ function headerLegend(lgd, options)
 
     % Center legend at the top/bottom figure edge
     [w, h] = deal(lgd.Position(3) * parentPos(3), lgd.Position(4) * parentPos(4));
-    figPixels = getpixelposition(fig);
-    pad = 1 / figPixels(4);
     if options.location == "north"
         lgd.Position = toParent([(1 - w) / 2, 1 - h - pad, w, h]);
     else
