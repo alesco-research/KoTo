@@ -93,7 +93,7 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
         fig = ancestor(axs(1), "figure");
     else
         fig = figure(Name=options.name);
-        tl = tiledlayout(fig, sum(nRows), 1, TileSpacing="compact", Padding="tight");
+        tl = tiledlayout(fig, sum(nRows), 1, TileSpacing="tight", Padding="tight");
         axs = arrayfun(@(x) nexttile(tl), 1:sum(nRows));
         linestyleorder(fig, options.linestyles)
         colororder(fig, options.colorscheme)
@@ -115,9 +115,10 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
                 axs(j).LineStyleOrderIndex = j;
             end
             
-            hLines = plot( ...
-                axs(j), time, squeeze(Xcat(row, :, :)), LineWidth=trajOpts{i}.lineWidth ...
-            );
+            hLines = plot(axs(j), time, squeeze(Xcat(row, :, :)));
+            if ~isempty(trajOpts{i}.lineWidth)
+                set(hLines, "LineWidth", trajOpts{i}.lineWidth);
+            end
             if ~isempty(trajOpts{i}.lineStyle)
                 set(hLines, "LineStyle", trajOpts{i}.lineStyle);
             end

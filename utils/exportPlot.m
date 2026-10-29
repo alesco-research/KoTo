@@ -35,6 +35,8 @@ function exportPlot(fig, filename, options)
 %                        numeric
 %       legendFontSize - Font size for all legends in the figure.
 %                        Unchanged if omitted. (numeric)
+%       legendLineLength - Length of the line in legend entries, in points.
+%                        Unchanged if omitted. (numeric)
 %       unit           - Unit used for width, height, and margin.
 %                        'centimeters' (default) |'inches' |'points'
 %
@@ -62,6 +64,7 @@ function exportPlot(fig, filename, options)
         options.labelFontSize {mustBeNumeric} = NaN
         options.tickFontSize {mustBeNumeric} = NaN
         options.legendFontSize {mustBeNumeric} = NaN
+        options.legendLineLength {mustBeNumeric} = NaN
         options.unit string {mustBeValidUnit(options.unit)} = 'centimeters'
     end
 
@@ -101,6 +104,11 @@ function exportPlot(fig, filename, options)
     if ~isnan(options.legendFontSize)
         for i = 1:numel(legendHandles)
             set(legendHandles(i), FontSize=options.legendFontSize)
+        end
+    end
+    if ~isnan(options.legendLineLength)
+        for i = 1:numel(legendHandles)
+            set(legendHandles(i), ItemTokenSize=[options.legendLineLength; 0])
         end
     end
     

@@ -14,7 +14,8 @@ function opts = trajectoryOptions(options)
 %       color       - Line color as RGB triplet, hex code or color name
 %                     (e.g. "k"), or empty to use the axes ColorOrder
 %                     (default: [])
-%       lineWidth   - Line width passed to plot (default: 1.5)
+%       lineWidth   - Line width passed to plot, or empty to use the
+%                     default LineWidth (default: [])
 %       displayName - Legend entries, one per page of the trajectory, or
 %                     empty to leave them unset (default: string.empty)
 %
@@ -32,9 +33,11 @@ function opts = trajectoryOptions(options)
 %   See also: plotTrajectories, validatecolor
     arguments
         options.labels (:,:) cell = {}
-        options.lineStyle (:,1) string {mustBeMember(options.lineStyle, ["-", "--", ":", "-.", "none"])} = string.empty
+        options.lineStyle (:,1) string { ...
+            mustBeMember(options.lineStyle, ["-", "--", ":", "-.", "none"]) ...
+        } = string.empty
         options.color {mustBeValidColor} = []
-        options.lineWidth (1,1) {mustBeNumeric, mustBePositive} = 1.5
+        options.lineWidth double {mustBeScalarOrEmpty, mustBePositive} = []
         options.displayName (:,1) string = string.empty
     end
     opts = options;
