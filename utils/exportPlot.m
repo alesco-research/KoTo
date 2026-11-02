@@ -108,7 +108,7 @@ function exportPlot(fig, filename, options)
     end
     if ~isnan(options.legendLineLength)
         for i = 1:numel(legendHandles)
-            set(legendHandles(i), ItemTokenSize=[options.legendLineLength; 0])
+            set(legendHandles(i), ItemTokenSize=[options.legendLineLength; 18])
         end
     end
     

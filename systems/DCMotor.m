@@ -48,8 +48,20 @@ classdef DCMotor < SystemBase
 
     methods
         function obj = DCMotor(options)
+            % Explicit name-value arguments; those not given keep their defaults.
             arguments
-                options.?DCMotor;
+                options.Ra (1,1) {mustBeNumeric, mustBePositive};
+                options.La (1,1) {mustBeNumeric, mustBePositive};
+                options.km (1,1) {mustBeNumeric, mustBePositive};
+                options.ua (1,1) {mustBeNumeric, mustBePositive};
+                options.B (1,1) {mustBeNumeric, mustBePositive};
+                options.tau_l (1,1) {mustBeNumeric};
+                options.J (1,1) {mustBeNumeric, mustBePositive};
+                options.inputType (1,1) string;
+                options.Ts (1,1) {mustBePositive};
+                options.odeopts (1,1) struct;
+                options.processNoiseCov {mustBeNumeric};
+                options.measurementNoiseCov {mustBeNumeric};
             end
             for f = string(fieldnames(options))'
                 obj.(f) = options.(f);

@@ -370,7 +370,7 @@ function [fig, lgd] = plotSweep(x, errors, predictorNames, xLabel, name)
     for row = 1:2
         for col = 1:2
             axs(row, col) = nexttile;
-            hold on, grid on, colororder("gem12")
+            hold on, grid on, colororder(colorPalette("gem12"))
             metric = reshape(errors(2 * (row - 1) + col, :, :), numberOfPredictors, [])';
             plot(x, metric, "-o");
             set(gca, YScale="log");

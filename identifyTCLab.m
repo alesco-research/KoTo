@@ -296,7 +296,7 @@ if savePlots
     );
 end
 
-fig = figure(Name="MOESP Depth Sweep"); hold on, grid on, colororder("gem12")
+fig = figure(Name="MOESP Depth Sweep"); hold on, grid on, colororder(colorPalette("gem12"))
 plot(depthSamples * TsTrain, depthErrors', "o-", MarkerSize=2);
 set(gca, ColorOrderIndex=1);
 for k = 1:numel(orders)

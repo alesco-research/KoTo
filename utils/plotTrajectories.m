@@ -45,8 +45,8 @@ function [fig, axs] = plotTrajectories(X, trajOpts, options)
     arguments
         options.name (1,1) string = "Trajectories"
         options.dt (1,1) {mustBeNumeric, mustBePositive} = 1
-        options.colorscheme (:,:) {mustBeValidColorOrder} = "gem12"
-        options.linestyles (:,:) {mustBeValidLineStyleOrder} = "mixedstyles"
+        options.colorscheme (:,:) {mustBeValidColorOrder} = colorPalette("gem12")
+        options.linestyles (:,:) {mustBeValidLineStyleOrder} = lineStyles("mixedstyles")
         options.axs (:,1) matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty
     end
     if isempty(X)

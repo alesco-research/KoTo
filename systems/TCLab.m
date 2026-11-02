@@ -50,8 +50,20 @@ classdef TCLab < SystemBase
     methods
         function obj = TCLab(options)
             arguments
-                options.?TCLab;
-                options.Ts {mustBePositive} = 1;
+                options.Ta (1,1) {mustBeNumeric};
+                options.U (1,1) {mustBeNumeric, mustBePositive};
+                options.Us (1,1) {mustBeNumeric, mustBePositive};
+                options.m (1,1) {mustBeNumeric, mustBePositive};
+                options.Cp (1,1) {mustBeNumeric, mustBePositive};
+                options.A (1,1) {mustBeNumeric, mustBePositive};
+                options.As (1,1) {mustBeNumeric, mustBePositive};
+                options.Q1max (1,1) {mustBeNumeric, mustBePositive};
+                options.Q2max (1,1) {mustBeNumeric, mustBePositive};
+                options.emissivity (1,1) {mustBeNumeric, mustBePositive};
+                options.Ts (1,1) {mustBePositive} = 1;
+                options.odeopts (1,1) struct;
+                options.processNoiseCov {mustBeNumeric};
+                options.measurementNoiseCov {mustBeNumeric};
             end
             for f = string(fieldnames(options))'
                 obj.(f) = options.(f);
