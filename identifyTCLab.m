@@ -48,8 +48,7 @@ validationPath = fullfile(dataDir, validationData);
 
 %% Load data
 fprintf("\n[1] Load training, validation and test trajectories...\n");
-load(trainPath, "XTrain", "UTrain", "Ts")
-TsTrain = Ts;
+load(trainPath, "XTrain", "UTrain", "Ts"); TsTrain = Ts;
 validation = load(validationPath, "XTest", "UTest", "Ts");
 [XVal, UVal] = deal(validation.XTest, validation.UTest);
 if TsTrain ~= validation.Ts
@@ -319,7 +318,6 @@ if savePlots
     );
 end
 
-%% Local functions
 function [err, XPredictedScaled] = evaluate(model, X, U, m, options)
 % EVALUATE  One-step (row 1) and multi-step (row 2) state error norms of a
 % warm-started predictor on one scaled test trajectory. The first m samples

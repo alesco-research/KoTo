@@ -5,7 +5,7 @@
 %                        Bilinear  z+ = A z + B u + N (u (x) z)
 %                        GeKo      z+ = K (z (x) v),  v = [1; u]
 %                        KCF       z+ = A z + A12 (v (x) [1; x_t])
-%                        Willem's  fundamental lemma, memory = ny samples
+%                        Willems  fundamental lemma, memory = ny samples
 %  Embedding lengths and ridge weights were selected by trajectory-wise
 %  4-fold cross-validation on the training data (see README.pdf).
 clc, clearvars, close all;
@@ -32,7 +32,7 @@ liftType = "affine";   % "affine": z = [1; q], "rff": z = [1; q; random Fourier 
 % Ridge weights per predictor (cross-validated)
 gamma = struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4);
 
-% Willem's fundamental lemma
+% Willems fundamental lemma
 flMemory = numberOfOutputs; % past samples fixing the initial condition
 flHorizon = 40;             % samples predicted per block
 
@@ -144,7 +144,7 @@ fprintf("\n[3] Fit predictors...\n");
 [YPairs, ZPairs, WPairs, VPairs] = getOneStepPairs(ZTrain, WTrain, VTrain, maxNumberOfPairs=1E7);
 fprintf("\tNumber of one-step pairs: %d\n", size(ZPairs, 2));
 
-% Drop trajectories that are too short for Willem's fundamental lemma
+% Drop trajectories that are too short for Willems fundamental lemma
 isLongEnough = cellfun(@(u) size(u, 2) >= flMemory + flHorizon, UTrainScaled);
 pairs = [
     cellfun(@(x) x(:, 1:end-1), XTrainScaled(isLongEnough)', UniformOutput=0);
@@ -165,7 +165,7 @@ for k = 1:numel(predictors)
     fprintf("\t%s", evalc("predictors{" + k + "}.getOperatorNorm();"))
 end
 
-modelNames = ["Willem's", predictorNames{:}];
+modelNames = ["Willems", predictorNames{:}];
 numberOfModels = numel(modelNames);
 
 %% Evaluate on test data
@@ -179,7 +179,7 @@ for i = 1:numberOfTestRuns
     XPredictedScaled = nan(outputDim, N, numberOfModels);
     XOneStepScaled = nan(outputDim, N, numberOfModels);
 
-    % Evaluate Willem's
+    % Evaluate Willems
     m = fl.memory;
     if T > m
         XPredictedScaled(:, m+1:T, 1) = fl.forecast(u(:, 1:m), x(:, 1:m), u(:, m+1:T));

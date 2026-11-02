@@ -1,11 +1,43 @@
-%% Sweep input delay and training size for the TC-Lab Koopman predictors
+%% Sweep training size and embedding lengths for the TC-Lab predictors
+%  Uses the same pipeline as learnTCLab (IODelayEmbedding, affine lifting,
+%  per-predictor ridge weights, Willems with memory = numberOfOutputs).
+%  Sweep 1: training data from 10 % to 100 % at the base embedding.
+%  Sweep 2: coarse grid over numberOfOutputs and numberOfInputs, plotted as
+%           slices over numberOfOutputs for fixed numberOfInputs.
+%  All errors are mean error norms in °C, averaged over the test window
+%  t >= evaluationStart (t = 0 is the first sample) and the test runs.
 clc, clearvars, close all;
 initWorkspace;
+%#ok<*UNRCH>
+
+% Willems is expected to be ill-conditioned for short memories or little data
+warning("off", "FundamentalLemma:NotPersistentlyExciting");
+warning("off", "MATLAB:nearlySingularMatrix");
 
 %% Set parameters
 savePlots = true;
+plotPrefix = "data/v1_";
 trainData = "TCLabTrain01.mat";
 testData = "TCLabTest01.mat";
+
+% Base configuration (matches learnTCLab)
+base = struct( ...
+    numberOfOutputs=20, ...
+    numberOfInputs=20, ...
+    liftType="affine", ...
+    gamma=struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4), ...
+    maxNumberOfPairs=1E7, ...
+    flHorizon=40, ...
+    evaluationStart=40 ...
+);
+
+% Sweep 1: training sizes, as fractions of the available data
+trainingFractions = 0.1:0.1:1;
+numberOfRepetitions = 5;  % random pair subsets averaged per size
+
+% Sweep 2: embedding lengths (coarse grid)
+numberOfOutputsSweep = [1, 2, 5, 10, 15, 20, 30];
+numberOfInputsSweep = [0, 5, 10, 15];
 
 % Plotting parameters
 margin = 0;
@@ -21,33 +53,9 @@ set(groot, defaultTextInterpreter="latex");
 set(groot, defaultLegendInterpreter="latex");
 set(groot, defaultAxesTickLabelInterpreter="latex");
 
-% Base configuration (matches learnTCLab)
-base = struct( ...
-    stateDelay=0, ...
-    inputDelay=12, ...
-    stride=2, ...
-    kernelType="poly", ...
-    numberOfCenters=300, ...
-    maxNumberOfPairs=40000, ...
-    kcfCouplingRatio=2, ...
-    kcfCouplingDegree=1, ...
-    gamma=5E-3, ...
-    flMemory=10, ...
-    flHorizon=40, ...
-    evaluationStart=[] ...
-);
-
-% Sweep 1: input delays (in multiples of the stride)
-inputDelays = 0:20;
-
-% Sweep 2: training sizes, as fractions of the available pairs
-trainingFractions = 1:-0.1:0.4;
-numberOfRepetitions = 5;  % random pair subsets averaged per size
-
 %% Load and scale data
 dataDir = fullfile(fileparts(which("sweepTCLab")), "data");
-load(fullfile(dataDir, trainData), "XTrain", "UTrain", "Ts")
-TsTrain = Ts;
+load(fullfile(dataDir, trainData), "XTrain", "UTrain", "Ts"); TsTrain = Ts;
 load(fullfile(dataDir, testData), "XTest", "UTest", "Ts")
 if TsTrain ~= Ts
     error("Train and test sampling time mismatch.")
@@ -55,88 +63,56 @@ end
 
 stateScaling = Scale([23, 70; 23, 70]); % [x1] = °C, [x2] = °C
 inputScaling = Scale([0, 100; 0, 100]); % [u1] = %, [u2] = %
-data = {
-    cellfun(@stateScaling.scale, XTrain, UniformOutput=0)
-    cellfun(@inputScaling.scale, UTrain, UniformOutput=0)
-    cellfun(@stateScaling.scale, XTest, UniformOutput=0)
-    cellfun(@inputScaling.scale, UTest, UniformOutput=0)
-};
-
-%% Sweep 1: input delay
-fprintf("\n[1] Sweep input delay...\n");
-
-% Evaluate all delays from the longest memory on
-longestMemory = max(base.stateDelay, max(inputDelays)) * base.stride;
-
-delayErrors = cell(numel(inputDelays), 1);
-for d = 1:numel(inputDelays)
-    cfg = base;
-    cfg.inputDelay = inputDelays(d);
-    cfg.evaluationStart = longestMemory + 1;
-
-    rng(42);
-    [delayErrors{d}, predictorNames] = evaluatePredictors(cfg, data{:});
-    fprintf("\tInput delay %2d: multi-step mean error norm", inputDelays(d));
-    fprintf("  %.3e", delayErrors{d}(2, :));
-    fprintf("\n");
-end
-delayErrors = cat(3, delayErrors{:});
-
-[fig, lgd] = plotSweep(inputDelays, delayErrors, predictorNames, "Input delay", "Input Delay Sweep");
-headerLegend(lgd, ...
-    location="south", ...
-    width=width, ...
-    height=height, ...
-    fontSize=legendFontSize, ...
-    lineLength=legendLineLength, ...
-    shrink=true ...
+data = struct( ...
+    XTrain={cellfun(@stateScaling.scale, XTrain(:), UniformOutput=0)}, ...
+    UTrain={cellfun(@inputScaling.scale, UTrain(:), UniformOutput=0)}, ...
+    XTest={cellfun(@stateScaling.scale, XTest(:), UniformOutput=0)}, ...
+    UTest={cellfun(@inputScaling.scale, UTest(:), UniformOutput=0)}, ...
+    XTestTrue={XTest(:)}, ...
+    stateScaling=stateScaling ...
 );
-if savePlots
-    exportPlot(fig, "data/input_delay_sweep.pdf", ...
-        width=width, ...
-        height=height, ...
-        margin=margin, ...
-        tickFontSize=tickFontSize, ...
-        labelFontSize=labelFontSize, ...
-        legendFontSize=legendFontSize, ...
-        legendLineLength=legendLineLength ...
-    );
-end
 
-%% Sweep 2: training size
-fprintf("\n[2] Sweep training size...\n");
-memory = max(base.stateDelay, base.inputDelay) * base.stride;
-numberOfAvailablePairs = sum(cellfun(@(x) size(x, 2) - 1 - memory, data{1}));
+% Common evaluation window for all configurations of both sweeps
+longestMemory = max( ...
+    max(numberOfOutputsSweep) - 1, max([numberOfInputsSweep, base.numberOfInputs]));
+base.evaluationStart = max([ ...
+    base.evaluationStart, longestMemory + 1, max(numberOfOutputsSweep), base.numberOfOutputs]);
+fprintf("\tEvaluation window: t >= %d samples\n", base.evaluationStart);
+
+%% Sweep 1: training size
+fprintf("\n[1] Sweep training size...\n");
+memory = max(base.numberOfOutputs - 1, base.numberOfInputs);
+numberOfAvailablePairs = sum(cellfun(@(u) size(u, 2) - memory, data.UTrain));
 trainingSizes = round(trainingFractions * numberOfAvailablePairs);
 
-% Samples available to the Fundamental Lemma (inputs paired with x(:, 1:end-1))
-numberOfAvailableSamples = sum(cellfun(@(u) size(u, 2), data{2}));
+% Samples available to Willems (inputs paired with x(:, 1:end-1))
+numberOfAvailableSamples = sum(cellfun(@(u) size(u, 2), data.UTrain));
 
 sizeErrors = cell(numel(trainingSizes), 1);
 for s = 1:numel(trainingSizes)
     cfg = base;
     cfg.maxNumberOfPairs = trainingSizes(s);
-    cfg.evaluationStart = max(memory, cfg.flMemory) + 1;
 
     repetitionErrors = cell(numberOfRepetitions, 1);
     for r = 1:numberOfRepetitions
         rng(r);
-        repetitionErrors{r} = evaluatePredictors(cfg, data{:});
+        [repetitionErrors{r}, predictorNames] = evaluatePredictors(cfg, data);
     end
 
-    % Fundamental Lemma on truncated trajectories (deterministic, no repetitions)
+    % Willems on truncated trajectories (deterministic, no repetitions)
     numberOfSamples = round(trainingFractions(s) * numberOfAvailableSamples);
-    [flErrors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, data{:});
+    [flErrors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, data);
 
     sizeErrors{s} = [flErrors, mean(cat(3, repetitionErrors{:}), 3)];
-    fprintf("\t%5d pairs (FL: %d samples, %d trajectories): multi-step mean error norm", ...
-        trainingSizes(s), sum(trajectoryLengths), numel(trajectoryLengths));
-    fprintf("  %.3e", sizeErrors{s}(2, :));
+    fprintf("\t%3d%% %6d pairs, Willems: %5d samples in %2d trajectories", ...
+        round(100 * trainingFractions(s)), trainingSizes(s), ...
+        sum(trajectoryLengths), numel(trajectoryLengths));
     fprintf("\n");
 end
 sizeErrors = cat(3, sizeErrors{:});
+modelNames = ["Willems"; predictorNames(:)];
 
-[fig, lgd] = plotSweep(trainingFractions * 100, sizeErrors, ["Willem's"; predictorNames], ...
+[fig, lgd] = plotSweep(trainingFractions * 100, sizeErrors, modelNames, ...
     "Training data [\%]", "Training Size Sweep");
 headerLegend(lgd, ...
     location="south", ...
@@ -147,7 +123,7 @@ headerLegend(lgd, ...
     shrink=true ...
 );
 if savePlots
-    exportPlot(fig, "data/training_size_sweep.pdf", ...
+    exportPlot(fig, plotPrefix + "training_size_sweep.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -158,157 +134,185 @@ if savePlots
     );
 end
 
-%% Local functions
-function [errors, predictorNames] = evaluatePredictors(cfg, XTrain, UTrain, XTest, UTest)
-    %EVALUATEPREDICTORS Fit the Koopman predictors for one configuration and
-    %   return their state-space errors on the (scaled) test data.
-    %
-    %   errors is 4-by-P with rows
-    %       [one-step mean error norm; multi-step mean error norm;
-    %        one-step max. error norm; multi-step max. error norm]
-    %   of the per-step Euclidean error norms, pooled over all test
-    %   trajectories. Multi-step
-    %   rollouts start at cfg.evaluationStart (default memory + 1) and errors
-    %   are taken from the step after on, so configurations with different
-    %   memories are compared on the same time window. The last time step is
-    %   excluded to match evaluateFundamentalLemma, which has no input there.
-    [stateDim, inputDim] = deal(size(XTrain{1}, 1), size(UTrain{1}, 1));
-    stateDelayEmbedding = DelayEmbedding(stateDim, cfg.stateDelay, cfg.stride);
-    inputDelayEmbedding = DelayEmbedding(inputDim, cfg.inputDelay, cfg.stride);
-    memory = max(stateDelayEmbedding.memory, inputDelayEmbedding.memory);
-    dqm = memory - stateDelayEmbedding.memory;
-    dwm = memory - inputDelayEmbedding.memory;
+%% Sweep 2: embedding lengths
+fprintf("\n[2] Sweep numberOfOutputs and numberOfInputs...\n");
+[numberOfNy, numberOfNu] = deal(numel(numberOfOutputsSweep), numel(numberOfInputsSweep));
+delayErrors = nan(2, numel(predictorNames), numberOfNy, numberOfNu);
+flDelayErrors = nan(2, numberOfNy);
+for a = 1:numberOfNy
+    cfg = base;
+    cfg.numberOfOutputs = numberOfOutputsSweep(a);
 
-    if isempty(cfg.evaluationStart)
-        cfg.evaluationStart = memory + 1;
-    elseif cfg.evaluationStart <= memory
+    % Willems only depends on numberOfOutputs (its memory)
+    flDelayErrors(:, a) = evaluateFundamentalLemma(cfg, inf, data);
+
+    for b = 1:numberOfNu
+        cfg.numberOfInputs = numberOfInputsSweep(b);
+        rng(42);
+        delayErrors(:, :, a, b) = evaluatePredictors(cfg, data);
+        fprintf("\tny = %2d, nu = %2d", cfg.numberOfOutputs, cfg.numberOfInputs);
+        fprintf("\n");
+    end
+end
+
+titles = ["one-step", "open-loop (multi-step)"];
+for row = [2, 1]
+    fprintf("\n\tMean %s error norm [degC], Willems over numberOfOutputs\n\tny  ", titles(row));
+    fprintf("  %6d", numberOfOutputsSweep);
+    fprintf("\n\t    ");
+    fprintf("  %6.3f", flDelayErrors(row, :));
+    fprintf("\n");
+    for k = 1:numel(predictorNames)
+        fprintf("\n\tMean %s error norm [degC], %s (rows: ny, columns: nu)\n\tny\\nu", ...
+            titles(row), predictorNames(k));
+        fprintf("  %6d", numberOfInputsSweep);
+        fprintf("\n");
+        for a = 1:numberOfNy
+            fprintf("\t%-4d ", numberOfOutputsSweep(a));
+            fprintf("  %6.3f", squeeze(delayErrors(row, k, a, :)));
+            fprintf("\n");
+        end
+        [minError, idx] = min(delayErrors(row, k, :, :), [], "all");
+        [a, b] = ind2sub([numberOfNy, numberOfNu], idx);
+        fprintf("\tBest: ny = %d, nu = %d (%.3f)\n", ...
+            numberOfOutputsSweep(a), numberOfInputsSweep(b), minError);
+    end
+end
+
+surfaceNames = ["One-Step", "Multi-Step"];
+for row = 1:2
+    fig = plotSlices(numberOfInputsSweep, numberOfOutputsSweep, ...
+        reshape(delayErrors(row, :, :, :), numel(predictorNames), numberOfNy, numberOfNu), ...
+        predictorNames, surfaceNames(row) + " Delay Sweep");
+    if savePlots
+        exportPlot(fig, plotPrefix + "delay_sweep_" + lower(erase(surfaceNames(row), "-")) + ".pdf", ...
+            width=width, ...
+            height=height, ...
+            margin=margin, ...
+            tickFontSize=tickFontSize, ...
+            labelFontSize=labelFontSize, ...
+            legendFontSize=legendFontSize, ...
+            legendLineLength=legendLineLength ...
+        );
+    end
+end
+
+%% Local functions
+function [errors, predictorNames] = evaluatePredictors(cfg, data)
+    %EVALUATEPREDICTORS Fit the Koopman predictors of learnTCLab for one
+    %   configuration and return their 2-by-P mean error norms in °C,
+    %   [one-step; multi-step], on the test data.
+    %
+    %   Multi-step rollouts start at sample t0 = cfg.evaluationStart (1-based
+    %   index) from the embedded test state, so configurations with different
+    %   memories are compared on the same window t0+1, ..., T as in
+    %   learnTCLab. The last output sample is excluded to match
+    %   evaluateFundamentalLemma, which has no input there.
+    [outputDim, inputDim] = deal(size(data.XTrain{1}, 1), size(data.UTrain{1}, 1));
+    embedding = IODelayEmbedding(outputDim, inputDim, cfg.numberOfOutputs, cfg.numberOfInputs);
+    memory = embedding.memory;
+    t0 = cfg.evaluationStart;
+    if t0 <= memory
         error("evaluationStart must be larger than the memory (%d).", memory);
     end
 
-    % Delay embedding and alignment
-    align = @(e, n) e(:, 1 + n:end);
-    QTrain = cellfun(@(x) align(stateDelayEmbedding.embed(x), dqm), XTrain, UniformOutput=0);
-    WTrain = cellfun(@(u) align(inputDelayEmbedding.embed(u), dwm), UTrain, UniformOutput=0);
-    QTest = cellfun(@(x) align(stateDelayEmbedding.embed(x), dqm), XTest, UniformOutput=0);
-    WTest = cellfun(@(u) align(inputDelayEmbedding.embed(u), dwm), UTest, UniformOutput=0);
-    Q = cell2mat(cellfun(@(q) q(:, 1:end-1), QTrain, UniformOutput=0)');
-
-    % Lifting
-    featureDim = stateDelayEmbedding.featureDim;
-    if cfg.kernelType == "poly"
-        stateLifting = PolynomialLift(featureDim, 3);
-    else
-        [~, centers] = kmeans(Q', cfg.numberOfCenters, MaxIter=300, Replicates=3);
-        switch cfg.kernelType
-            case "rbf"
-                stateLifting = GaussianLift(featureDim, 0.5, centers');
-            case "rq"
-                stateLifting = RationalQuadraticLift(featureDim, 1, 5, centers');
-            case "matern"
-                stateLifting = Matern52Lift(featureDim, 0.3, centers');
-        end
+    switch cfg.liftType
+        case "affine"
+            stateLifting = PolynomialLift(embedding.featureDim, 1);
+        case "rff"
+            stateLifting = RandomFourierLift(embedding.featureDim, 200, 64);
+        otherwise
+            error("Unknown liftType ""%s"".", cfg.liftType);
     end
-    inputLifting = PolynomialLift(inputDelayEmbedding.featureDim, 1);
+    inputLifting = PolynomialLift(inputDim, 1); % v = [1; u]
 
+    [QTrain, WTrain] = cellfun(@embedding.embed, data.XTrain, data.UTrain, UniformOutput=0);
+    [QTest, WTest] = cellfun(@embedding.embed, data.XTest, data.UTest, UniformOutput=0);
     ZTrain = cellfun(@stateLifting.lift, QTrain, UniformOutput=0);
     VTrain = cellfun(@inputLifting.lift, WTrain, UniformOutput=0);
     ZTest = cellfun(@stateLifting.lift, QTest, UniformOutput=0);
     VTest = cellfun(@inputLifting.lift, WTest, UniformOutput=0);
-    stateLifting.fitProjection(Q, gamma=1e-4);
+    stateLifting.fitProjection(cell2mat(QTrain(:)'), gamma=1E-8);
 
-    % Fit Koopman predictors
     [YPairs, ZPairs, WPairs, VPairs] = getOneStepPairs( ...
         ZTrain, WTrain, VTrain, maxNumberOfPairs=cfg.maxNumberOfPairs ...
     );
-
-    if cfg.kernelType == "poly"
-        kcfCouplingIdxs = 1:nchoosek(featureDim + cfg.kcfCouplingDegree, cfg.kcfCouplingDegree);
-    else
-        Z = cell2mat(cellfun(@(z) z(:, 1:end-1), ZTrain, UniformOutput=0)');
-        V = cell2mat(VTrain');
-        if stateLifting.includeState
-            [~, ordering] = sort(var(Z(1 + stateLifting.dim:end, :), 0, 2), "descend");
-            kcfOrdering = [1, 2, 3, 3 + ordering];
-        else
-            [~, kcfOrdering] = sort(var(Z, 0, 2), "descend");
-        end
-        effectiveInputs = sum(var(V, 0, 2) > 1E-10);
-        numberOfCouplings = round((cfg.kcfCouplingRatio - 1) * stateLifting.featureDim / effectiveInputs);
-        numberOfCouplings = clip(numberOfCouplings, 1, stateLifting.featureDim);
-        kcfCouplingIdxs = sort(kcfOrdering(1:numberOfCouplings))';
-    end
-
     predictors = {
-        LinearKoopman(YPairs, ZPairs, WPairs, gamma=cfg.gamma)
-        BilinearKoopman(YPairs, ZPairs, WPairs, gamma=cfg.gamma)
-        GeKoKoopman(YPairs, ZPairs, VPairs, gamma=cfg.gamma)
-        KCFKoopman(YPairs, ZPairs, VPairs, couplingIdxs=kcfCouplingIdxs, gamma=cfg.gamma)
+        LinearKoopman(YPairs, ZPairs, WPairs, gamma=cfg.gamma.Linear)
+        BilinearKoopman(YPairs, ZPairs, WPairs, gamma=cfg.gamma.Bilinear)
+        GeKoKoopman(YPairs, ZPairs, VPairs, gamma=cfg.gamma.GeKo)
+        KCFKoopman(YPairs, ZPairs, VPairs, couplingIdxs=1:1 + outputDim, gamma=cfg.gamma.KCF)
     };
     testInputs = {WTest, WTest, VTest, VTest};
     predictorNames = cellfun(@(c) erase(string(class(c)), "Koopman"), predictors);
 
-    % Evaluate on the common window
-    t0 = cfg.evaluationStart;
-    c0 = t0 - memory;  % column of ZTest/WTest belonging to time step t0
-    [oneStepErrors, multiStepErrors] = deal(cell(numel(XTest), numel(predictors)));
-    for i = 1:numel(XTest)
-        XTrue = XTest{i}(:, t0+1:end-1);
+    % Column c of ZTest/WTest belongs to sample memory + c
+    c0 = t0 - memory;
+    errors = zeros(2, numel(predictors), numel(data.XTest));
+    for i = 1:numel(data.XTest)
+        T = size(data.UTest{i}, 2);
+        XTrue = data.XTestTrue{i}(:, t0+1:T);
         for k = 1:numel(predictors)
-            w = testInputs{k}{i}(:, c0:end-1);
+            w = testInputs{k}{i}(:, c0:T - memory - 1);
 
             ZMultiStep = predictors{k}.rollout(ZTest{i}(:, c0), w);
-            XMultiStep = stateDelayEmbedding.unembed(stateLifting.project(ZMultiStep(:, 2:end)));
-            multiStepErrors{i, k} = XMultiStep - XTrue;
+            XMultiStep = embedding.unembed(stateLifting.project(ZMultiStep(:, 2:end)));
 
-            ZOneStep = predictors{k}.predict(ZTest{i}(:, c0:end-2), w);
-            XOneStep = stateDelayEmbedding.unembed(stateLifting.project(ZOneStep));
-            oneStepErrors{i, k} = XOneStep - XTrue;
+            ZOneStep = predictors{k}.predict(ZTest{i}(:, c0:T - memory - 1), w);
+            XOneStep = embedding.unembed(stateLifting.project(ZOneStep));
+
+            errors(:, k, i) = [
+                mean(vecnorm(data.stateScaling.unscale(XOneStep) - XTrue));
+                mean(vecnorm(data.stateScaling.unscale(XMultiStep) - XTrue))
+            ];
         end
     end
-
-    errors = zeros(4, numel(predictors));
-    for k = 1:numel(predictors)
-        errors(:, k) = errorMetrics([oneStepErrors{:, k}], [multiStepErrors{:, k}]);
-    end
+    errors = mean(errors, 3);
 end
 
-function [errors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, XTrain, UTrain, XTest, UTest)
-    %EVALUATEFUNDAMENTALLEMMA Fit the Fundamental Lemma predictor on at most
-    %   numberOfSamples training samples and return its 4-by-1 state-space
-    %   errors on the same window as evaluatePredictors.
+function [errors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, data)
+    %EVALUATEFUNDAMENTALLEMMA Fit Willems fundamental lemma with memory
+    %   cfg.numberOfOutputs on at most numberOfSamples training samples and
+    %   return its 2-by-1 mean error norms in °C, [one-step; multi-step], on
+    %   the same window as evaluatePredictors.
     %
     %   The training data is reduced by truncating the longest trajectories
-    %   first, see truncateTrajectories.
-    m = cfg.flMemory;
+    %   first, see truncateTrajectories. Trajectories shorter than
+    %   memory + horizon are dropped.
+    [m, h] = deal(cfg.numberOfOutputs, cfg.flHorizon);
     t0 = cfg.evaluationStart;
     if t0 < m
-        error("evaluationStart must be at least the Fundamental Lemma memory (%d).", m);
+        error("evaluationStart must be at least the Willems memory (%d).", m);
     end
 
-    YTrain = cellfun(@(x) x(:, 1:end-1), XTrain, UniformOutput=0);
-    [YTrain, UTrain] = truncateTrajectories(YTrain, UTrain, numberOfSamples, m + cfg.flHorizon);
+    YTrain = cellfun(@(x) x(:, 1:end-1), data.XTrain, UniformOutput=0);
+    [YTrain, UTrain] = truncateTrajectories(YTrain, data.UTrain, numberOfSamples, m + h);
     trajectoryLengths = cellfun(@(u) size(u, 2), UTrain);
 
     pairs = [YTrain(:)'; UTrain(:)'];
-    predictor = FundamentalLemma(pairs{:}, memory=m, horizon=cfg.flHorizon);
+    fl = FundamentalLemma(pairs{:}, memory=m, horizon=h);
 
-    [oneStepErrors, multiStepErrors] = deal(cell(numel(XTest), 1));
-    for i = 1:numel(XTest)
-        % Multi-step: warm start on the m samples up to t0, predict t0+1, ..., T-1
-        XMultiStep = predictor.forecast( ...
-            UTest{i}(:, t0-m+1:t0), XTest{i}(:, t0-m+1:t0), UTest{i}(:, t0+1:end) ...
-        );
-        multiStepErrors{i} = XMultiStep - XTest{i}(:, t0+1:end-1);
+    [x, u] = deal(data.XTest, data.UTest);
+    errors = zeros(2, numel(x));
+    for i = 1:numel(x)
+        T = size(u{i}, 2);
+        XTrue = data.XTestTrue{i}(:, t0+1:T);
+
+        % Multi-step: warm start on the m samples up to t0, predict t0+1, ..., T
+        XMultiStep = fl.forecast(u{i}(:, t0-m+1:t0), x{i}(:, t0-m+1:t0), u{i}(:, t0+1:T));
 
         % One-step
-        oneStepErrors{i} = zeros(size(multiStepErrors{i}));
-        for t = t0+1:size(UTest{i}, 2)
-            oneStepErrors{i}(:, t-t0) = predictor.forecast( ...
-                UTest{i}(:, t-m:t-1), XTest{i}(:, t-m:t-1), UTest{i}(:, t) ...
-            ) - XTest{i}(:, t);
+        XOneStep = zeros(size(XTrue));
+        for t = t0+1:T
+            XOneStep(:, t-t0) = fl.forecast(u{i}(:, t-m:t-1), x{i}(:, t-m:t-1), u{i}(:, t));
         end
+
+        errors(:, i) = [
+            mean(vecnorm(data.stateScaling.unscale(XOneStep) - XTrue));
+            mean(vecnorm(data.stateScaling.unscale(XMultiStep) - XTrue))
+        ];
     end
-    errors = errorMetrics([oneStepErrors{:}], [multiStepErrors{:}]);
+    errors = mean(errors, 2);
 end
 
 function [Y, U] = truncateTrajectories(Y, U, numberOfSamples, minLength)
@@ -318,6 +322,7 @@ function [Y, U] = truncateTrajectories(Y, U, numberOfSamples, minLength)
     %   shorter ones are kept untouched as long as possible. If that maximum
     %   would fall below minLength, the shortest trajectories are dropped
     %   until the remaining ones can keep at least minLength samples.
+    %   Trajectories shorter than minLength are always dropped.
     lengths = cellfun(@(u) size(u, 2), U);
     valid = find(lengths >= minLength);
     [~, order] = sort(lengths(valid), "descend");
@@ -342,45 +347,56 @@ function [Y, U] = truncateTrajectories(Y, U, numberOfSamples, minLength)
     U = cellfun(@(u) u(:, 1:min(end, cap)), U(keep), UniformOutput=0);
 end
 
-function errors = errorMetrics(oneStepErrors, multiStepErrors)
-    %ERRORMETRICS Stack [one-step mean error norm; multi-step mean error
-    %   norm; one-step max. error norm; multi-step max. error norm] of the
-    %   given n-by-T error matrices, using the Euclidean norm per time step.
-    [oneStepNorms, multiStepNorms] = deal(vecnorm(oneStepErrors), vecnorm(multiStepErrors));
-    errors = [
-        mean(oneStepNorms);
-        mean(multiStepNorms);
-        max(oneStepNorms);
-        max(multiStepNorms)
-    ];
-end
-
-function [fig, lgd] = plotSweep(x, errors, predictorNames, xLabel, name)
-    %PLOTSWEEP Plot the 4-by-P-by-N sweep errors over x in a 2-by-2 layout:
-    %   columns are one-/multi-step, rows are mean/max. error norm.
+function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
+    %PLOTSWEEP Plot the 2-by-P-by-N sweep errors over x in a 1-by-2 layout
+    %   (one-step, multi-step mean error norm).
     fig = figure(Name=name);
-    tiledlayout(2, 2, TileSpacing="tight", Padding="tight");
+    tiledlayout(1, 2, TileSpacing="tight", Padding="tight");
     columnTitles = ["One-Step", "Multi-Step"];
-    rowLabels = {
-        "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$";
-        "$\max(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$"
-    };
-    numberOfPredictors = size(errors, 2);
-    axs = gobjects(2, 2);
-    for row = 1:2
-        for col = 1:2
-            axs(row, col) = nexttile;
-            hold on, grid on, colororder(colorPalette("gem12"))
-            metric = reshape(errors(2 * (row - 1) + col, :, :), numberOfPredictors, [])';
-            plot(x, metric, "-o");
-            set(gca, YScale="log");
-            if row == 1, title(columnTitles(col)); end
-            if row == 2, xlabel(xLabel); end
-            if col == 1, ylabel(rowLabels{row}); end
+    numberOfModels = size(errors, 2);
+    axs = gobjects(1, 2);
+    for col = 1:2
+        axs(col) = nexttile;
+        hold on, grid on, colororder(colorPalette("gem12"))
+        plot(x, reshape(errors(col, :, :), numberOfModels, [])', "-o");
+        set(gca, YScale="log", YLimitMethod="tight");
+
+        limits = ylim;
+        ylim([limits(1), 10^round(log10(limits(1)) + 1)]);
+        title(columnTitles(col));
+        xlabel(xLabel);
+        if col == 1
+            ylabel({
+                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ ";
+                "[$^\circ$C]"
+            });
         end
     end
-    linkaxes(axs(:, 1), "x");
-    linkaxes(axs(:, 2), "x");
-    set(axs(1, :), XTickLabel=[]);
-    lgd = legend(axs(1, 1), predictorNames, Orientation="horizontal");
+    lgd = legend(axs(1), modelNames, Orientation="horizontal");
+end
+
+function fig = plotSlices(nu, ny, errors, predictorNames, name)
+    %PLOTSLICES Plot the P-by-numel(ny)-by-numel(nu) errors over ny in one
+    %   tile per predictor, with one line per fixed nu (default color and
+    %   line style order, in the order of nu).
+    fig = figure(Name=name);
+    tiledlayout(2, 2, TileSpacing="tight", Padding="tight");
+    axs = gobjects(numel(predictorNames), 1);
+    for k = 1:numel(predictorNames)
+        axs(k) = nexttile; hold on, grid on
+        linestyleorder(axs(k), lineStyles("mixedstyles"));
+        colororder(axs(k), colorPalette("gem12"));
+        plot(ny, reshape(errors(k, :, :), numel(ny), numel(nu)), Marker="o");
+        set(gca, YScale="log", YLimitMethod="tight");
+        title(predictorNames(k));
+        if k > 2, xlabel("Past Outputs [-]"); end
+        if mod(k, 2) == 1
+            ylabel({
+                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ ";
+                "[$^\circ$C]"
+            });
+        end
+    end
+    linkaxes(axs);
+    set(axs(1:2), XTickLabel=[]);
 end
