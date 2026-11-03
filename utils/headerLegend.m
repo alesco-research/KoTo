@@ -5,8 +5,9 @@ function headerLegend(lgd, options)
 %   headerLegend(lgd, Name=Value) resizes the figure containing the legend
 %   lgd to its final export size, applies the legend formatting and then
 %   centers the legend horizontally at the top or bottom edge of the
-%   figure. Call it right before exportPlot with the same width, height
-%   and unit, since the legend size depends on the figure size and font.
+%   figure. Call it right before exportPlot with the same width, height,
+%   unit, font size and line length, since the legend is placed for
+%   exactly these.
 %
 %   Input Arguments:
 %       lgd - Legend to place (matlab.graphics.illustration.Legend)
@@ -64,13 +65,17 @@ function headerLegend(lgd, options)
     set(lgd, Units="normalized");
     drawnow
 
-    % Legend area height normalized to the figure, including the edge
-    % padding and the gap towards the remaining content
-    figPixels = getpixelposition(fig);
+    % Normalized legend size
+    pixelsPerInch = get(groot, "ScreenPixelsPerInch");
+    unitsPerInch = struct(centimeters=2.54, inches=1, points=72).(options.unit);
+    figPixels = [options.width, options.height] * pixelsPerInch / unitsPerInch;
     lgdPixels = getpixelposition(lgd, true);
-    pad = 1 / figPixels(4);
-    gap = options.gap * get(groot, "ScreenPixelsPerInch") / 72 / figPixels(4);
-    legendHeight = lgdPixels(4) / figPixels(4) + pad + gap;
+    [w, h] = deal(lgdPixels(3) / figPixels(1), lgdPixels(4) / figPixels(2));
+
+    % Get normalized legend height
+    pad = 1 / figPixels(2);
+    gap = options.gap * pixelsPerInch / 72 / figPixels(2);
+    legendHeight = h + pad + gap;
 
     % Shrink remaining content (axes, tiled layouts) out of the legend area
     if options.shrink
@@ -98,7 +103,6 @@ function headerLegend(lgd, options)
     toParent = @(p) [(p(1:2) - parentPos(1:2)) ./ parentPos(3:4), p(3:4) ./ parentPos(3:4)];
 
     % Center legend at the top/bottom figure edge
-    [w, h] = deal(lgd.Position(3) * parentPos(3), lgd.Position(4) * parentPos(4));
     if options.location == "north"
         lgd.Position = toParent([(1 - w) / 2, 1 - h - pad, w, h]);
     else

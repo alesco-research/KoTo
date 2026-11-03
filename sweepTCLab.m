@@ -10,10 +10,6 @@ clc, clearvars, close all;
 initWorkspace;
 %#ok<*UNRCH>
 
-% Willems is expected to be ill-conditioned for short memories or little data
-warning("off", "FundamentalLemma:NotPersistentlyExciting");
-warning("off", "MATLAB:nearlySingularMatrix");
-
 %% Set parameters
 savePlots = true;
 plotPrefix = "data/v1_";
@@ -81,6 +77,8 @@ fprintf("\tEvaluation window: t >= %d samples\n", base.evaluationStart);
 
 %% Sweep 1: training size
 fprintf("\n[1] Sweep training size...\n");
+warning("off", "MATLAB:nearlySingularMatrix");
+warning("off", "FundamentalLemma:NotPersistentlyExciting");
 memory = max(base.numberOfOutputs - 1, base.numberOfInputs);
 numberOfAvailablePairs = sum(cellfun(@(u) size(u, 2) - memory, data.UTrain));
 trainingSizes = round(trainingFractions * numberOfAvailablePairs);
@@ -133,6 +131,8 @@ if savePlots
         legendLineLength=legendLineLength ...
     );
 end
+warning("on", "MATLAB:nearlySingularMatrix");
+warning("on", "FundamentalLemma:NotPersistentlyExciting");
 
 %% Sweep 2: embedding lengths
 fprintf("\n[2] Sweep numberOfOutputs and numberOfInputs...\n");
@@ -181,9 +181,17 @@ end
 
 surfaceNames = ["One-Step", "Multi-Step"];
 for row = 1:2
-    fig = plotSlices(numberOfInputsSweep, numberOfOutputsSweep, ...
+    [fig, lgd] = plotSlices(numberOfInputsSweep, numberOfOutputsSweep, ...
         reshape(delayErrors(row, :, :, :), numel(predictorNames), numberOfNy, numberOfNu), ...
-        predictorNames, surfaceNames(row) + " Delay Sweep");
+        predictorNames, surfaceNames(row) + " Delay Sweep", "Input Delay(s):");
+    headerLegend(lgd, ...
+        location="south", ...
+        width=width, ...
+        height=height, ...
+        fontSize=legendFontSize, ...
+        lineLength=legendLineLength, ...
+        shrink=true ...
+    );
     if savePlots
         exportPlot(fig, plotPrefix + "delay_sweep_" + lower(erase(surfaceNames(row), "-")) + ".pdf", ...
             width=width, ...
@@ -375,10 +383,11 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
     lgd = legend(axs(1), modelNames, Orientation="horizontal");
 end
 
-function fig = plotSlices(nu, ny, errors, predictorNames, name)
+function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLabel)
     %PLOTSLICES Plot the P-by-numel(ny)-by-numel(nu) errors over ny in one
     %   tile per predictor, with one line per fixed nu (default color and
-    %   line style order, in the order of nu).
+    %   line style order, in the order of nu) and a legend labeled by nu,
+    %   preceded in-line by legendLabel.
     fig = figure(Name=name);
     tiledlayout(2, 2, TileSpacing="tight", Padding="tight");
     axs = gobjects(numel(predictorNames), 1);
@@ -386,7 +395,8 @@ function fig = plotSlices(nu, ny, errors, predictorNames, name)
         axs(k) = nexttile; hold on, grid on
         linestyleorder(axs(k), lineStyles("mixedstyles"));
         colororder(axs(k), colorPalette("gem12"));
-        plot(ny, reshape(errors(k, :, :), numel(ny), numel(nu)), Marker="o");
+        h = plot(ny, reshape(errors(k, :, :), numel(ny), numel(nu)), Marker="o");
+        if k == 1, sliceLines = h; end
         set(gca, YScale="log", YLimitMethod="tight");
         title(predictorNames(k));
         if k > 2, xlabel("Past Outputs [-]"); end
@@ -399,4 +409,8 @@ function fig = plotSlices(nu, ny, errors, predictorNames, name)
     end
     linkaxes(axs);
     set(axs(1:2), XTickLabel=[]);
+    % Invisible first entry acts as an in-line legend title
+    labelLine = plot(axs(1), NaN, NaN, LineStyle="none", Marker="none");
+    lgd = legend(axs(1), [labelLine; sliceLines], [legendLabel; string(nu(:))], ...
+        Orientation="horizontal");
 end
