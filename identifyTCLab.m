@@ -14,7 +14,7 @@ testData = "TCLabTest01.mat";
 validationData = "TCLabTest02.mat"; % Used to select the MOESP depth
 
 % Model parameters
-moespOrders = [2, 4];   % MOESP model orders compared to the ODE
+moespOrders = [3, 4];   % MOESP model orders compared to the ODE
 moespSweep = 1:8;       % MOESP model orders for the order sweep
 moespDepths = 5:5:150;  % [s] Block-Hankel depths L swept per model order
 depthCriterion = 2;     % Error minimized by the depth (1: one-step, 2: multi-step)

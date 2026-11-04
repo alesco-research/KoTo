@@ -18,25 +18,29 @@ plt.rcParams.update(
 SAMPLING_INTERVAL = 1
 FILE_NAME = "TCLAB_data_periodic_inputs"
 DATA_FOLDER = Path(__file__).parent.parent / "data/"
+IGNORE_IDXS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
 
 
 def output_path(mode: str, counter: int) -> Path:
     return DATA_FOLDER / DATA_FOLDER / f"TCLab{mode}{counter:02d}.mat"
 
 
-def shuffle_datasets(ratio=0.7):
+def shuffle_datasets(ratio=0, ignore=IGNORE_IDXS):
     idxs = [
-        (Path(s).stem.removeprefix(f"{FILE_NAME}_"))
+        Path(s).stem.removeprefix(f"{FILE_NAME}_")
         for s in iglob(f"{FILE_NAME}_*.npz", root_dir=DATA_FOLDER / "raw")
     ]
+    idxs = list(filter(lambda idx: int(idx) not in ignore, idxs))
     random.shuffle(idxs)
     split = round(len(idxs) * ratio)
     return idxs[:split], idxs[split:]
 
 
-train_idxs, test_idxs = shuffle_datasets()
+train_idxs, test_idxs = shuffle_datasets(ignore=IGNORE_IDXS)
 datasets = {"Train": train_idxs, "Test": test_idxs}
 for mode, idxs in datasets.items():
+    if len(idxs) == 0:
+        continue
     XTrajs = np.empty(len(idxs), dtype=object)
     UTrajs = np.empty(len(idxs), dtype=object)
     for loc, idx in enumerate(idxs):
