@@ -2,8 +2,9 @@ classdef SystemBase
     %SystemBase Abstract base class for nonlinear systems simulated via ODE45.
     %   Models dx/dt = f(x,u) with a zero-order hold on the input and
     %   optional additive Gaussian process and measurement noise. Subclasses
-    %   define the constant properties stateDim and inputDim and implement
-    %   dynamics(obj,x,u,params), which returns dx/dt.
+    %   define the constant properties stateDim and outputDim, the property
+    %   inputDim (constant, or dependent on the configuration) and
+    %   implement dynamics(obj,x,u,params), which returns dx/dt.
     %
     %   The optional struct PARAMS overrides the model parameters stored in
     %   the object without creating a new instance (e.g. for parameter
@@ -32,7 +33,7 @@ classdef SystemBase
     %
     %   SystemBase properties:
     %      stateDim            - Number of states (abstract, constant)
-    %      inputDim            - Number of inputs (abstract, constant)
+    %      inputDim            - Number of inputs (abstract, constant or dependent)
     %      Ts                  - Simulation time step (default: 0.005)
     %      odeopts             - Options passed to ODE45
     %      processNoiseCov     - Process noise covariance per step (default: [], none)
@@ -50,8 +51,11 @@ classdef SystemBase
 
     properties (Abstract, Constant)
         stateDim (1,1) {mustBeInteger, mustBePositive};
-        inputDim (1,1) {mustBeInteger, mustBePositive};
         outputDim (1,1) {mustBeInteger, mustBePositive};
+    end
+
+    properties (Abstract)
+        inputDim (1,1) {mustBeInteger, mustBePositive};
     end
 
     properties
@@ -132,6 +136,7 @@ classdef SystemBase
             if name == "measurementNoiseCov"
                 dim = obj.outputDim;
             end
+            
             msg = "";
             tol = 1e-10 * norm(cov, "fro");
             if ~isreal(cov) || ~all(isfinite(cov), "all")

@@ -1,47 +1,51 @@
 classdef TCLab < SystemBase
-    %TCLABFAN Simulated TC-Lab with a cooling fan and sensor dynamics (ODE45).
-    %   Hypothetical variant of the TC-Lab used to study state-input
-    %   coupling. Heater 1 is driven by u1; heater 2 is unpowered and is
-    %   heated through the heat sink only. Input u2 drives a cooling fan
-    %   that amplifies the heat transfer coefficient to ambient by the
-    %   factor fanGain when switched on,
+    %TCLAB Simulated TC-Lab with optional cooling fan and sensor dynamics (ODE45).
+    %   Two heaters, driven by u1 and u2, exchange heat with each other
+    %   (convection and radiation through the shared surface As) and with
+    %   the ambient. Each temperature sensor is a first-order lag of its
+    %   heater temperature (time constant tauSensor), giving 4 states.
     %
-    %       U(u2) = U * (1 + fanGain * u2),   u2 in {0, 1},
+    %   With fanSwitch="on", input u3 drives a cooling fan that increases
+    %   the heat transfer coefficient to ambient linearly with fan speed,
+    %
+    %       U(u3) = U + dU * u3 / 100,   u3 in % (clipped to [0, 100]),
     %
     %   so the fan input multiplies the temperature difference to ambient:
     %   the dynamics contain the product of state and input (bilinear
-    %   coupling), unlike the TC-Lab, whose heater inputs enter additively.
-    %   Each temperature sensor is a first-order lag of its heater
-    %   temperature (time constant tauSensor), giving 4 states.
+    %   coupling), whereas the heater inputs enter additively. With
+    %   fanSwitch="off", there is no fan input and U is constant.
     %
-    %   M = TCLABFAN(Name=Value) sets the properties below at construction.
+    %   M = TCLAB(Name=Value) sets the properties below at construction.
     %
     %   State  x = [T1; T2; S1; S2] in °C (heater and sensor temperatures).
     %   Output y = x(3:4) (measured sensor temperatures), see OUTPUT.
-    %   Input  u = [u1; u2], u1 in % (clipped to [0, 100]), u2 the fan
-    %   switch (off if u2 <= 0.5, on otherwise).
+    %   Input  u = [u1; u2; u3] if fanSwitch="on", else u = [u1; u2]:
+    %   heater powers u1, u2 in % and fan speed u3 in %, each clipped to
+    %   [0, 100]. inputDim (3 or 2) follows fanSwitch.
     %
     %   Properties (defaults):
-    %      Ta 23 °C, U 5 W/m^2-K, fanGain 11 (fan on: U -> 55 W/m^2-K),
+    %      Ta 23 °C, U 5 W/m^2-K, dU 95 W/m^2-K (full fan: U -> 100 W/m^2-K),
     %      Us 24 W/m^2-K, m 4E-3 kg, Cp 500 J/kg-K, A 1E-3 m^2,
-    %      As 2E-4 m^2, Qmax 0.8 W (heater 1), emissivity 0.9,
-    %      tauSensor 15 s, Ts 1 s.
+    %      As 2E-4 m^2, Q1max 1 W, Q2max 0.75 W, emissivity 0.9,
+    %      tauSensor 20 s, fanSwitch "off", Ts 1 s.
     %
-    %   See also TCLab, SystemBase, generateTCLabFanData.
+    %   See also SystemBase, generateTCLabFanData.
 
     properties (Constant)
         stateDim = 4;
-        inputDim = 3;
         outputDim = 2;
         sigma = 5.67E-8;    % [W/m^2-K^4] Stefan-Boltzmann constant
         T0 = 273.15;        % [K]
     end
 
+    properties (Dependent)
+        inputDim % 3 with fan (u = [u1; u2; u3]), 2 without (u = [u1; u2])
+    end
+
     properties (GetAccess=public, SetAccess=immutable)
         Ta (1,1) {mustBeNumeric} = 23;                       % [°C] ambient temperature
         U  (1,1) {mustBeNumeric, mustBePositive} = 5;        % [W/m^2-K] heat transfer coefficient, fan off
-        dU (1,1) {mustBeNumeric, mustBeNonnegative} = 50;    % [W/m^2-K] increase at full fan speed
-        fanGain (1,1) {mustBeNumeric, mustBeNonnegative} = 11; % [-] amplification of U when the fan is on
+        dU (1,1) {mustBeNumeric, mustBeNonnegative} = 95;    % [W/m^2-K] increase at full fan speed
         Us (1,1) {mustBeNumeric, mustBePositive} = 24.0;     % [W/m^2-K] heat transfer coefficient between heaters
         m  (1,1) {mustBeNumeric, mustBePositive} = 4E-3;     % [kg] mass
         Cp (1,1) {mustBeNumeric, mustBePositive} = 500;      % [J/kg-K] heat capacity
@@ -60,7 +64,6 @@ classdef TCLab < SystemBase
                 options.Ta (1,1) {mustBeNumeric};
                 options.U (1,1) {mustBeNumeric, mustBePositive};
                 options.dU (1,1) {mustBeNumeric, mustBeNonnegative};
-                options.fanGain (1,1) {mustBeNumeric, mustBeNonnegative};
                 options.Us (1,1) {mustBeNumeric, mustBePositive};
                 options.m (1,1) {mustBeNumeric, mustBePositive};
                 options.Cp (1,1) {mustBeNumeric, mustBePositive};
@@ -81,6 +84,10 @@ classdef TCLab < SystemBase
             end
         end
 
+        function n = get.inputDim(obj)
+            n = 2 + (obj.fanSwitch == "on");
+        end
+
         function dx = dynamics(obj, x, u, p)
             if nargin < 4
                 p = obj;
@@ -91,7 +98,7 @@ classdef TCLab < SystemBase
 
             Uc = p.U;
             if p.fanSwitch == "on"
-                Uc = p.U + p.dU * clip(u(2, :), 0, 100) / 100;
+                Uc = p.U + p.dU * clip(u(3, :), 0, 100) / 100;
             end
 
             % Heat transfer between heaters

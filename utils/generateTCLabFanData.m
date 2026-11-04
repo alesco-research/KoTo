@@ -4,24 +4,24 @@ function [XTrain, UTrain, XTest, UTest, Ts] = generateTCLabFanData(options)
 %   TCLab (fanSwitch="on") for numberOfTrainRuns training and
 %   numberOfTestRuns test experiments of runLength samples each. Every
 %   experiment is excited by independent multisines of raised cosines
-%   (periods 10:15:145 s, random magnitudes and phases) on all inputs:
-%   the heater magnitudes sum to 120 % (clipped to [0, 100] %), and with
-%   probability 0.2 each, heater 1 or heater 2 is off for the whole run;
-%   the fan magnitudes sum to 2, so u3 lies in [0, 2]. Experiments start
-%   from random initial temperatures T1, T2 ~ U(20, 30) °C (hence
-%   |T1 - T2| <= 10 °C). Gaussian measurement noise (noiseStd) is added and
-%   the measured temperatures are quantised (quantization, ~10-bit ADC +
-%   TMP36 sensor). The trajectories are returned as column cell arrays
-%   (X: 2 x N, U: 3 x N-1); Ts is the sampling time of the plant [s].
+%   (periods 10:15:145 s, random magnitudes summing to 120 %, random
+%   phases) plus uniform noise in [-5, 5] % on all three inputs (heaters
+%   u1, u2 and fan u3), clipped to [0, 100] %. With probability 0.2 each,
+%   heater 1 or heater 2 is off for the whole run. Experiments start from
+%   random initial temperatures T1, T2 ~ U(20, 30) °C (hence
+%   |T1 - T2| <= 10 °C). Gaussian measurement noise with covariance
+%   noiseCov is added by the plant. The trajectories are returned as
+%   column cell arrays (X: 2 x N, U: 3 x N-1); Ts is the sampling time of
+%   the plant [s].
 %
 %   generateTCLabFanData(Name=Value) changes the defaults:
 %     numberOfTrainRuns (30), numberOfTestRuns (6), runLength (400),
-%     noiseStd (0.05 °C), quantization (0.32 °C), seed (42).
+%     noiseCov (0.05 * eye(2) °C^2), seed (42), Ts (1 s).
     arguments
         options.numberOfTrainRuns (1,1) {mustBeInteger, mustBePositive} = 30;
         options.numberOfTestRuns (1,1) {mustBeInteger, mustBePositive} = 6;
         options.runLength (1,1) {mustBeInteger, mustBePositive} = 400;
-        options.noiseCov (:,:) {mustBeNonnegative} = 0.05 * eye(2);
+        options.noiseCov (:,:) {mustBeNonnegative} = 0.05^2 * eye(2);
         options.seed (1,1) {mustBeInteger, mustBeNonnegative} = 42;
         options.Ts (1,1) {mustBePositive} = 1;
     end
