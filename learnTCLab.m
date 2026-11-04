@@ -291,12 +291,13 @@ if savePlots
     );
 end
 
+traj = 1;
 fig = figure(Name="Phase Portrait"); hold on, grid on, colororder(colorPalette("gem12"))
 for k = 1:numberOfModels
-    plot(squeeze(XPredicted{1}(1, :, k)), squeeze(XPredicted{1}(2, :, k)));
+    plot(squeeze(XPredicted{traj}(1, :, k)), squeeze(XPredicted{traj}(2, :, k)));
 end
-plot(XTest{1}(1, :), XTest{1}(2, :), "k--", LineWidth=1)
-plot(XTest{1}(1, 1), XTest{1}(2, 1), "ko", MarkerSize=10, MarkerFaceColor="y")
+plot(XTest{traj}(1, :), XTest{traj}(2, :), "k--", LineWidth=1)
+plot(XTest{traj}(1, 1), XTest{traj}(2, 1), "ko", MarkerSize=5, MarkerFaceColor="y")
 xlabel("$x_1$ $[^\circ$C]")
 ylabel("$x_2$ $[^\circ$C]")
 legend([modelNames(:); "True"; "$x_0$"], Location="southeast");

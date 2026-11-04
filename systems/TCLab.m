@@ -39,20 +39,20 @@ classdef TCLab < SystemBase
     end
 
     properties (Dependent)
-        inputDim % 3 with fan (u = [u1; u2; u3]), 2 without (u = [u1; u2])
+        inputDim
     end
 
     properties (GetAccess=public, SetAccess=immutable)
         Ta (1,1) {mustBeNumeric} = 23;                       % [°C] ambient temperature
         U  (1,1) {mustBeNumeric, mustBePositive} = 5;        % [W/m^2-K] heat transfer coefficient, fan off
-        dU (1,1) {mustBeNumeric, mustBeNonnegative} = 95;    % [W/m^2-K] increase at full fan speed
+        dU (1,1) {mustBeNumeric, mustBeNonnegative} = 150;   % [W/m^2-K] increase at full fan speed
         Us (1,1) {mustBeNumeric, mustBePositive} = 24.0;     % [W/m^2-K] heat transfer coefficient between heaters
         m  (1,1) {mustBeNumeric, mustBePositive} = 4E-3;     % [kg] mass
         Cp (1,1) {mustBeNumeric, mustBePositive} = 500;      % [J/kg-K] heat capacity
         A  (1,1) {mustBeNumeric, mustBePositive} = 1E-3;     % [m^2] area not between heaters
         As (1,1) {mustBeNumeric, mustBePositive} = 2E-4;     % [m^2] surface area between heaters
-        Q1max (1,1) {mustBeNumeric, mustBePositive} = 1;     % [W] max power heater 1
-        Q2max (1,1) {mustBeNumeric, mustBePositive} = 0.75;  % [W] max power heater 2
+        Q1max (1,1) {mustBeNumeric, mustBePositive} = 2;     % [W] max power heater 1
+        Q2max (1,1) {mustBeNumeric, mustBePositive} = 1.5;  % [W] max power heater 2
         tauSensor (1,1) {mustBeNumeric, mustBePositive} = 20;% [s] sensor time constant
         emissivity (1,1) {mustBeNumeric, mustBePositive} = 0.9;
         fanSwitch (1,1) string {mustBeMember(fanSwitch, ["on", "off"])} = "off";
@@ -82,10 +82,6 @@ classdef TCLab < SystemBase
             for f = string(fieldnames(options))'
                 obj.(f) = options.(f);
             end
-        end
-
-        function n = get.inputDim(obj)
-            n = 2 + (obj.fanSwitch == "on");
         end
 
         function dx = dynamics(obj, x, u, p)
@@ -122,6 +118,10 @@ classdef TCLab < SystemBase
                 X (4,:) {mustBeNumeric};
             end
             Y = X(3:4, :);
+        end
+
+        function n = get.inputDim(obj)
+            n = 2 + (obj.fanSwitch == "on");
         end
     end
 end
