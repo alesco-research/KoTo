@@ -38,6 +38,7 @@ set(groot, defaultLegendInterpreter="latex");
 set(groot, defaultAxesTickLabelInterpreter="latex");
 
 stateDim = TCLab.stateDim;
+outputDim = TCLab.outputDim;
 stateScaling = Scale([23, 70; 23, 70]); % [x1] = °C, [x2] = °C
 inputScaling = Scale([0, 100; 0, 100]); % [u1] = %, [u2] = %
 
@@ -138,7 +139,7 @@ end
 
 %% Evaluate prediction error
 fprintf("\n[4] Evaluate prediction errors...\n");
-XPredicted = arrayfun(@(len) nan(stateDim, len, numberOfModels), testHorizons, UniformOutput=0);
+XPredicted = arrayfun(@(len) nan(outputDim, len, numberOfModels), testHorizons, UniformOutput=0);
 scaledStateError = arrayfun(@(len) nan(2, len, numberOfModels), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     for j = 1:numberOfModels

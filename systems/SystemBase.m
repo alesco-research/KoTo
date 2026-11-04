@@ -51,6 +51,7 @@ classdef SystemBase
     properties (Abstract, Constant)
         stateDim (1,1) {mustBeInteger, mustBePositive};
         inputDim (1,1) {mustBeInteger, mustBePositive};
+        outputDim (1,1) {mustBeInteger, mustBePositive};
     end
 
     properties
@@ -86,11 +87,19 @@ classdef SystemBase
                 end
             end
             if nargout > 1
-                Y = X;
+                Y = obj.output(X);
                 if ~isempty(Lr)
-                    Y(:, 2:end) = Y(:, 2:end) + Lr * randn(obj.stateDim, T);
+                    Y(:, 2:end) = Y(:, 2:end) + Lr * randn(obj.outputDim, T);
                 end
             end
+        end
+
+        function Y = output(obj, X)
+            arguments
+                obj (1,1) SystemBase; %#ok<INUSA>
+                X (:,:) {mustBeNumeric};
+            end
+            Y = X;
         end
 
         function obj = set.processNoiseCov(obj, val)
@@ -119,12 +128,16 @@ classdef SystemBase
         function validateCovariance(obj, cov, name)
             if isempty(cov); return; end
 
+            dim = obj.stateDim;
+            if name == "measurementNoiseCov"
+                dim = obj.outputDim;
+            end
             msg = "";
             tol = 1e-10 * norm(cov, "fro");
             if ~isreal(cov) || ~all(isfinite(cov), "all")
                 msg = "real and finite";
-            elseif ~isequal(size(cov), obj.stateDim * [1,1])
-                msg = sprintf("%d-by-%d" , obj.stateDim * [1,1]);
+            elseif ~isequal(size(cov), dim * [1,1])
+                msg = sprintf("%d-by-%d" , dim * [1,1]);
             elseif norm(cov - cov.', "fro") > tol
                 msg = "symmetric";
             elseif min(eig((cov + cov')/2, "vector")) < -tol

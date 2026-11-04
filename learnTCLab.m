@@ -92,8 +92,8 @@ dataLabels = {
     ["Temp. 2", "$[^\circ$C]"]
 };
 inputLabels = {
-    ["Input 1", "[\%]"];
-    ["Input 2", "[\%]"]
+    ["Heater 1", "[\%]"];
+    ["Heater 2", "[\%]"]
 };
 
 if plotTrainData
