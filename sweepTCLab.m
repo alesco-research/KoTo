@@ -377,7 +377,7 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
         xlabel(xLabel);
         if col == 1
             ylabel( ...
-                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ " + ...
+                "$\mathrm{mean}(\|\hat{\mathrm{y}} - \mathrm{y}^\star\|)$ " + ...
                 "[$^\circ$C]" ...
             );
         end
@@ -404,7 +404,7 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
         if k > 2, xlabel("Past Outputs [-]"); end
         if mod(k, 2) == 1
             ylabel({
-                "$\mathrm{mean}(\!\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|\!)$ ";
+                "$\mathrm{mean}(\!\|\hat{\mathrm{y}}$-$\mathrm{y}^{\star\!}\|\!)$";
                 "[$^\circ$C]"
             });
         end
@@ -414,6 +414,7 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
     end
     linkaxes(axs);
     set(axs(1:2), XTickLabel=[]);
+    set(axs([2,4]), YTickLabel=[]);
     % Invisible first entry acts as an in-line legend title
     labelLine = plot(axs(1), NaN, NaN, LineStyle="none", Marker="none");
     lgd = legend(axs(1), [labelLine; sliceLines], [legendLabel; string(nu(:))], ...

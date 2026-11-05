@@ -88,12 +88,12 @@ fprintf( ...
 );
 
 dataLabels = {
-    ["Temp. 1", "$[^\circ$C]"];
-    ["Temp. 2", "$[^\circ$C]"]
+    ["$T_{C1}$", "$[^\circ$C]"];
+    ["$T_{C2}$", "$[^\circ$C]"]
 };
 inputLabels = {
-    ["Heater 1", "[\%]"];
-    ["Heater 2", "[\%]"]
+    ["$q_1$", "[\%]"];
+    ["$q_2$", "[\%]"]
 };
 
 if plotTrainData
@@ -235,8 +235,8 @@ end
 fprintf("\n[5] Plotting...\n");
 [fig, axs] = plotTrajectories( ...
     XPredicted, trajectoryOptions(labels={
-        ["Temp. 1", "$[^\circ$C]"];
-        ["Temp. 2", "$[^\circ$C]"]
+        ["$T_{C1}$", "$[^\circ$C]"];
+        ["$T_{C2}$", "$[^\circ$C]"]
     }), ...
     name="State Trajectories", ...
     dt=Ts ...
@@ -264,8 +264,8 @@ end
 
 [fig, axs] = plotTrajectories( ...
     stateError, trajectoryOptions(labels={
-        ["One-Step", "$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"];
-        ["Multi-Step", "$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"]
+        ["One-Step", "$\|\hat{\mathrm{y}} - \mathrm{y}^\star\|$"];
+        ["Multi-Step", "$\|\hat{\mathrm{y}} - \mathrm{y}^\star\|$"]
     }), ...
     name="State-space Error", ...
     dt=Ts ...
@@ -298,10 +298,10 @@ for k = 1:numberOfModels
 end
 plot(XTest{traj}(1, :), XTest{traj}(2, :), "k--", LineWidth=1)
 plot(XTest{traj}(1, 1), XTest{traj}(2, 1), "ko", MarkerSize=5, MarkerFaceColor="y")
-xlabel("$x_1$ $[^\circ$C]")
-ylabel("$x_2$ $[^\circ$C]")
+xlabel("$T_{C1}$ $[^\circ$C]")
+ylabel("$T_{C2}$ $[^\circ$C]")
 ylim([26, 45])
-legend([modelNames(:); "True"; "$x_0$"], Location="northwest");
+legend([modelNames(:); "True"; "$y_0$"], Location="northwest");
 if savePlots
     exportPlot( ...
         fig, plotPrefix + "phase_portrait.pdf", ...
