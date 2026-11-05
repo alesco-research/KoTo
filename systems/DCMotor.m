@@ -49,7 +49,6 @@ classdef DCMotor < SystemBase
 
     methods
         function obj = DCMotor(options)
-            % Explicit name-value arguments; those not given keep their defaults.
             arguments
                 options.Ra (1,1) {mustBeNumeric, mustBePositive};
                 options.La (1,1) {mustBeNumeric, mustBePositive};
