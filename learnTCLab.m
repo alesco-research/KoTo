@@ -18,7 +18,7 @@ savePlots = true;
 saveModels = false;
 plotTrainData = true;
 plotTestData = true;
-plotPrefix = "data/v1_";
+plotPrefix = "data/";
 
 % Data
 trainData = "TCLabTrain01.mat";
@@ -26,11 +26,11 @@ testData = "TCLabTest01.mat";
 
 % Embedding and lifting
 numberOfOutputs = 20;  % past temperatures in the state [samples]
-numberOfInputs = 20;   % past heater inputs in the state [samples]
+numberOfInputs = 10;   % past heater inputs in the state [samples]
 liftType = "affine";   % "affine": z = [1; q], "rff": z = [1; q; random Fourier features]
 
 % Ridge weights per predictor (cross-validated)
-gamma = struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4);
+gamma = struct(Linear=1E-4, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4);
 
 % Willems fundamental lemma
 flMemory = numberOfOutputs; % past samples fixing the initial condition
@@ -291,7 +291,7 @@ if savePlots
     );
 end
 
-traj = 1;
+traj = 5;
 fig = figure(Name="Phase Portrait"); hold on, grid on, colororder(colorPalette("gem12"))
 for k = 1:numberOfModels
     plot(squeeze(XPredicted{traj}(1, :, k)), squeeze(XPredicted{traj}(2, :, k)));
@@ -300,7 +300,8 @@ plot(XTest{traj}(1, :), XTest{traj}(2, :), "k--", LineWidth=1)
 plot(XTest{traj}(1, 1), XTest{traj}(2, 1), "ko", MarkerSize=5, MarkerFaceColor="y")
 xlabel("$x_1$ $[^\circ$C]")
 ylabel("$x_2$ $[^\circ$C]")
-legend([modelNames(:); "True"; "$x_0$"], Location="southeast");
+ylim([26, 45])
+legend([modelNames(:); "True"; "$x_0$"], Location="northwest");
 if savePlots
     exportPlot( ...
         fig, plotPrefix + "phase_portrait.pdf", ...

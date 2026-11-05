@@ -12,14 +12,14 @@ initWorkspace;
 
 %% Set parameters
 savePlots = true;
-plotPrefix = "data/v1_";
+plotPrefix = "data/";
 trainData = "TCLabTrain01.mat";
 testData = "TCLabTest01.mat";
 
 % Base configuration (matches learnTCLab)
 base = struct( ...
     numberOfOutputs=20, ...
-    numberOfInputs=20, ...
+    numberOfInputs=10, ...
     liftType="affine", ...
     gamma=struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4), ...
     maxNumberOfPairs=1E7, ...
@@ -32,7 +32,7 @@ trainingFractions = 0.1:0.1:1;
 numberOfRepetitions = 5;  % random pair subsets averaged per size
 
 % Sweep 2: embedding lengths (coarse grid)
-numberOfOutputsSweep = [1, 2, 5, 10, 15, 20, 30];
+numberOfOutputsSweep = [1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45];
 numberOfInputsSweep = [0, 5, 10, 15];
 
 % Plotting parameters
@@ -97,21 +97,17 @@ for s = 1:numel(trainingSizes)
         [repetitionErrors{r}, predictorNames] = evaluatePredictors(cfg, data);
     end
 
-    % Willems on truncated trajectories (deterministic, no repetitions)
-    numberOfSamples = round(trainingFractions(s) * numberOfAvailableSamples);
-    [flErrors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, data);
-
-    sizeErrors{s} = [flErrors, mean(cat(3, repetitionErrors{:}), 3)];
-    fprintf("\t%3d%% %6d pairs, Willems: %5d samples in %2d trajectories", ...
-        round(100 * trainingFractions(s)), trainingSizes(s), ...
-        sum(trajectoryLengths), numel(trajectoryLengths));
+    sizeErrors{s} = [mean(cat(3, repetitionErrors{:}), 3)];
+    fprintf( ...
+        "\t%3d%% %6d pairs", round(100 * trainingFractions(s)), trainingSizes(s) ...
+    )
     fprintf("\n");
 end
-sizeErrors = cat(3, sizeErrors{:});
-modelNames = ["Willems"; predictorNames(:)];
 
-[fig, lgd] = plotSweep(trainingFractions * 100, sizeErrors, modelNames, ...
-    "Training data [\%]", "Training Size Sweep");
+[fig, lgd] = plotSweep( ...
+    trainingFractions * 100, cat(3, sizeErrors{:}), predictorNames, ...
+    "Training data [\%]", "Training Size Sweep" ...
+);
 headerLegend(lgd, ...
     location="south", ...
     width=width, ...
@@ -180,10 +176,16 @@ for row = [2, 1]
 end
 
 surfaceNames = ["One-Step", "Multi-Step"];
+ylimits = {[], [0.5, 1, 1.5, 2.5]};
 for row = 1:2
-    [fig, lgd] = plotSlices(numberOfInputsSweep, numberOfOutputsSweep, ...
-        reshape(delayErrors(row, :, :, :), numel(predictorNames), numberOfNy, numberOfNu), ...
-        predictorNames, surfaceNames(row) + " Delay Sweep", "Past Inputs:");
+    [fig, lgd] = plotSlices( ...
+        numberOfInputsSweep, numberOfOutputsSweep, ...
+        reshape(delayErrors(row, :, :, :), numel(predictorNames), ...
+        numberOfNy, numberOfNu ...
+        ), ...
+        predictorNames, surfaceNames(row) + " Delay Sweep", "Past Inputs:", ...
+        ylimits{row} ...
+    );
     headerLegend(lgd, ...
         location="south", ...
         width=width, ...
@@ -374,16 +376,16 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
         title(columnTitles(col));
         xlabel(xLabel);
         if col == 1
-            ylabel({
-                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ ";
-                "[$^\circ$C]"
-            });
+            ylabel( ...
+                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ " + ...
+                "[$^\circ$C]" ...
+            );
         end
     end
     lgd = legend(axs(1), modelNames, Orientation="horizontal");
 end
 
-function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLabel)
+function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLabel, ylimits)
     %PLOTSLICES Plot the P-by-numel(ny)-by-numel(nu) errors over ny in one
     %   tile per predictor, with one line per fixed nu (default color and
     %   line style order, in the order of nu) and a legend labeled by nu,
@@ -393,7 +395,7 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
     axs = gobjects(numel(predictorNames), 1);
     for k = 1:numel(predictorNames)
         axs(k) = nexttile; hold on, grid on
-        linestyleorder(axs(k), lineStyles("mixedstyles"));
+        linestyleorder(axs(k), "-");
         colororder(axs(k), colorPalette("gem12"));
         h = plot(ny, reshape(errors(k, :, :), numel(ny), numel(nu)), Marker="o");
         if k == 1, sliceLines = h; end
@@ -402,9 +404,12 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
         if k > 2, xlabel("Past Outputs [-]"); end
         if mod(k, 2) == 1
             ylabel({
-                "$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$ ";
+                "$\mathrm{mean}(\!\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|\!)$ ";
                 "[$^\circ$C]"
             });
+        end
+        if ~isempty(ylimits)
+            yticks(ylimits);
         end
     end
     linkaxes(axs);
