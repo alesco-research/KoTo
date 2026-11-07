@@ -4,7 +4,7 @@ classdef FundamentalLemma
 %   column span of block-Hankel matrices of recorded input-output data and
 %   provides warm-started forecasting without identifying a model.
 %
-%   obj = FundamentalLemma(Y1, U1, Y2, U2, ..., memory=10, horizon=50, lambda=0)
+%   obj = FundamentalLemma(Y1, U1, Y2, U2, ..., memory=10, horizon=50, gamma=0)
 %     Yi        ny-by-N_i output trajectory.
 %     Ui        nu-by-N_i input trajectory matching Yi. Pairs (Yi, Ui) are
 %               passed as repeated arguments; at least one is required.
@@ -15,7 +15,7 @@ classdef FundamentalLemma
 %     horizon   Number of future samples predicted per step (default 50).
 %               The Hankel depth is L = memory + horizon, and every
 %               trajectory needs at least L samples.
-%     lambda    Tikhonov regularization of the Hankel coefficients. Zero
+%     gamma    Tikhonov regularization of the Hankel coefficients. Zero
 %               gives the minimum-norm solution (default 0).
 %
 %   Hankel matrices are built per trajectory and concatenated column-wise,
@@ -27,7 +27,7 @@ classdef FundamentalLemma
 %   Properties (read-only):
 %     inputDim, outputDim       Number of inputs and outputs.
 %     memory, horizon           Past and future window lengths.
-%     lambda                    Regularization weight.
+%     gamma                    Regularization weight.
 %     K                         Predictor matrix mapping
 %                               [uPast(:); yPast(:); uFuture(:)] to the
 %                               predicted outputs yFuture(:) over horizon.
@@ -47,7 +47,7 @@ classdef FundamentalLemma
         inputDim {mustBeInteger, mustBePositive} = [];
         memory {mustBeInteger, mustBePositive};
         horizon {mustBeInteger, mustBePositive};
-        lambda (1,1) {mustBeNumeric, mustBeNonnegative};
+        gamma (1,1) {mustBeNumeric, mustBeNonnegative};
         K (:,:) {mustBeNumeric, mustBeMatrix};
     end
 
@@ -60,7 +60,7 @@ classdef FundamentalLemma
             arguments (Input)
                 options.memory (1,1) {mustBeInteger, mustBePositive} = 10;
                 options.horizon (1,1) {mustBeInteger, mustBePositive} = 50;
-                options.lambda (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
+                options.gamma (1,1) {mustBeNumeric, mustBeNonnegative} = 0;
             end
             if isempty(Y)
                 error( ...
@@ -100,13 +100,13 @@ classdef FundamentalLemma
 
             % yFuture = Yf * g with [Up; Yp; Uf] * g = [uPast; yPast; uFuture]
             H = [Up; Yp; Uf];
-            obj.K = (Yf * H') / (H * H' + options.lambda * eye(size(H, 1)));
+            obj.K = (Yf * H') / (H * H' + options.gamma * eye(size(H, 1)));
 
             obj.outputDim = ny;
             obj.inputDim = nu;
             obj.memory = m;
             obj.horizon = h;
-            obj.lambda = options.lambda;
+            obj.gamma = options.gamma;
         end
 
         function Y = forecast(obj, uPast, yPast, uFuture)

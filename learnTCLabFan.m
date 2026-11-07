@@ -20,13 +20,13 @@ initWorkspace;
 rng(42); % for reproducibility
 savePlots = true;
 saveModels = false;
-plotTrainData = true;
-plotTestData = true;
+plotTrainData = false;
+plotTestData = false;
 plotPrefix = "data/fan_";
 
 % Data
 numberOfTrainRuns = 14;
-numberOfTestRuns = 15;
+numberOfTestRuns = 6;
 runLength = 400; % [samples]
 
 % Embedding and lifting
@@ -35,7 +35,7 @@ numberOfInputs = 20;   % past heater inputs in the state [samples]
 liftType = "affine";   % "affine": z = [1; q], "rff": z = [1; q; random Fourier features]
 
 % Ridge weights per predictor (cross-validated)
-gamma = struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4);
+gamma = struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4, Willems=0);
 
 % Willems fundamental lemma
 flMemory = numberOfOutputs; % past samples fixing the initial condition
@@ -141,8 +141,8 @@ fprintf("\tState dimension: %d, lifted dimension: %d, reprojection error: %.2e\n
 
 %% Fit predictors
 fprintf("\n[3] Fit predictors...\n");
-[YPairs, ZPairs, WPairs, VPairs] = getOneStepPairs(ZTrain, WTrain, VTrain, maxNumberOfPairs=1E7);
-fprintf("\tNumber of one-step pairs: %d\n", size(ZPairs, 2));
+[YPairs, ZPairs, WPairs, VPairs] = getSingleStepPairs(ZTrain, WTrain, VTrain, maxNumberOfPairs=1E7);
+fprintf("\tNumber of single-step pairs: %d\n", size(ZPairs, 2));
 
 % Drop trajectories that are too short for Willems fundamental lemma
 isLongEnough = cellfun(@(u) size(u, 2) >= flMemory + flHorizon, UTrainScaled);
@@ -150,7 +150,7 @@ pairs = [
     cellfun(@(x) x(:, 1:end-1), XTrainScaled(isLongEnough)', UniformOutput=0);
     UTrainScaled(isLongEnough)'
 ];
-fl = FundamentalLemma(pairs{:}, memory=flMemory, horizon=flHorizon);
+fl = FundamentalLemma(pairs{:}, memory=flMemory, horizon=flHorizon, gamma=gamma.Willems);
 
 predictors = {
     LinearKoopman(YPairs, ZPairs, WPairs, gamma=gamma.Linear)
@@ -216,7 +216,7 @@ for i = 1:numberOfTestRuns
     end
 end
 
-titles = ["one-step", "open-loop (multi-step)"];
+titles = ["single-step", "multi-step"];
 for row = [2, 1]
     fprintf("\n\tMean %s error norm [degC], t >= %d s\n\tNr. ", titles(row), evaluationStart * Ts);
     fprintf("  %10s", modelNames);
@@ -264,8 +264,8 @@ end
 
 [fig, axs] = plotTrajectories( ...
     stateError, trajectoryOptions(labels={
-        ["One-Step", "$\|\hat{\mathrm{y}} - \mathrm{y}^\star\|$"];
-        ["Multi-Step", "$\|\hat{\mathrm{y}} - \mathrm{y}^\star\|$"]
+        ["Single-Step", "Error $[^\circ$C]"];
+        ["Multi-Step", "Error $[^\circ$C]"]
     }), ...
     name="State-space Error", ...
     dt=Ts ...

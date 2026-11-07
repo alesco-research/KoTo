@@ -151,7 +151,7 @@ for a = 1:numberOfNy
     end
 end
 
-titles = ["one-step", "open-loop (multi-step)"];
+titles = ["single-step", "open-loop (multi-step)"];
 for row = [2, 1]
     fprintf("\n\tMean %s error norm [degC], Willems over numberOfOutputs\n\tny  ", titles(row));
     fprintf("  %6d", numberOfOutputsSweep);
@@ -175,7 +175,7 @@ for row = [2, 1]
     end
 end
 
-surfaceNames = ["One-Step", "Multi-Step"];
+surfaceNames = ["Single-Step", "Multi-Step"];
 ylimits = {[], [0.5, 1, 1.5, 2.5]};
 for row = 1:2
     [fig, lgd] = plotSlices( ...
@@ -211,7 +211,7 @@ end
 function [errors, predictorNames] = evaluatePredictors(cfg, data)
     %EVALUATEPREDICTORS Fit the Koopman predictors of learnTCLab for one
     %   configuration and return their 2-by-P mean error norms in °C,
-    %   [one-step; multi-step], on the test data.
+    %   [single-step; multi-step], on the test data.
     %
     %   Multi-step rollouts start at sample t0 = cfg.evaluationStart (1-based
     %   index) from the embedded test state, so configurations with different
@@ -244,7 +244,7 @@ function [errors, predictorNames] = evaluatePredictors(cfg, data)
     VTest = cellfun(@inputLifting.lift, WTest, UniformOutput=0);
     stateLifting.fitProjection(cell2mat(QTrain(:)'), gamma=1E-8);
 
-    [YPairs, ZPairs, WPairs, VPairs] = getOneStepPairs( ...
+    [YPairs, ZPairs, WPairs, VPairs] = getSingleStepPairs( ...
         ZTrain, WTrain, VTrain, maxNumberOfPairs=cfg.maxNumberOfPairs ...
     );
     predictors = {
@@ -268,11 +268,11 @@ function [errors, predictorNames] = evaluatePredictors(cfg, data)
             ZMultiStep = predictors{k}.rollout(ZTest{i}(:, c0), w);
             XMultiStep = embedding.unembed(stateLifting.project(ZMultiStep(:, 2:end)));
 
-            ZOneStep = predictors{k}.predict(ZTest{i}(:, c0:T - memory - 1), w);
-            XOneStep = embedding.unembed(stateLifting.project(ZOneStep));
+            ZSingleStep = predictors{k}.predict(ZTest{i}(:, c0:T - memory - 1), w);
+            XSingleStep = embedding.unembed(stateLifting.project(ZSingleStep));
 
             errors(:, k, i) = [
-                mean(vecnorm(data.stateScaling.unscale(XOneStep) - XTrue));
+                mean(vecnorm(data.stateScaling.unscale(XSingleStep) - XTrue));
                 mean(vecnorm(data.stateScaling.unscale(XMultiStep) - XTrue))
             ];
         end
@@ -283,7 +283,7 @@ end
 function [errors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSamples, data)
     %EVALUATEFUNDAMENTALLEMMA Fit Willems fundamental lemma with memory
     %   cfg.numberOfOutputs on at most numberOfSamples training samples and
-    %   return its 2-by-1 mean error norms in °C, [one-step; multi-step], on
+    %   return its 2-by-1 mean error norms in °C, [single-step; multi-step], on
     %   the same window as evaluatePredictors.
     %
     %   The training data is reduced by truncating the longest trajectories
@@ -311,14 +311,14 @@ function [errors, trajectoryLengths] = evaluateFundamentalLemma(cfg, numberOfSam
         % Multi-step: warm start on the m samples up to t0, predict t0+1, ..., T
         XMultiStep = fl.forecast(u{i}(:, t0-m+1:t0), x{i}(:, t0-m+1:t0), u{i}(:, t0+1:T));
 
-        % One-step
-        XOneStep = zeros(size(XTrue));
+        % Single-step
+        XSingleStep = zeros(size(XTrue));
         for t = t0+1:T
-            XOneStep(:, t-t0) = fl.forecast(u{i}(:, t-m:t-1), x{i}(:, t-m:t-1), u{i}(:, t));
+            XSingleStep(:, t-t0) = fl.forecast(u{i}(:, t-m:t-1), x{i}(:, t-m:t-1), u{i}(:, t));
         end
 
         errors(:, i) = [
-            mean(vecnorm(data.stateScaling.unscale(XOneStep) - XTrue));
+            mean(vecnorm(data.stateScaling.unscale(XSingleStep) - XTrue));
             mean(vecnorm(data.stateScaling.unscale(XMultiStep) - XTrue))
         ];
     end
@@ -359,10 +359,10 @@ end
 
 function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
     %PLOTSWEEP Plot the 2-by-P-by-N sweep errors over x in a 1-by-2 layout
-    %   (one-step, multi-step mean error norm).
+    %   (single-step, multi-step mean error norm).
     fig = figure(Name=name);
     tiledlayout(1, 2, TileSpacing="tight", Padding="tight");
-    columnTitles = ["One-Step", "Multi-Step"];
+    columnTitles = ["Single-Step", "Multi-Step"];
     numberOfModels = size(errors, 2);
     axs = gobjects(1, 2);
     for col = 1:2
@@ -376,10 +376,7 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
         title(columnTitles(col));
         xlabel(xLabel);
         if col == 1
-            ylabel( ...
-                "$\mathrm{mean}(\|\hat{\mathrm{y}} - \mathrm{y}^\star\|)$ " + ...
-                "[$^\circ$C]" ...
-            );
+            ylabel("Multi-Step Error $[^\circ$C]");
         end
     end
     lgd = legend(axs(1), modelNames, Orientation="horizontal");
@@ -404,8 +401,8 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
         if k > 2, xlabel("Past Outputs [-]"); end
         if mod(k, 2) == 1
             ylabel({
-                "$\mathrm{mean}(\!\|\hat{\mathrm{y}}$-$\mathrm{y}^{\star\!}\|\!)$";
-                "[$^\circ$C]"
+                "Multi-Step";
+                "Error $[^\circ$C]"
             });
         end
         if ~isempty(ylimits)

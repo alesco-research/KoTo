@@ -18,14 +18,14 @@ plt.rcParams.update(
 SAMPLING_INTERVAL = 1
 FILE_NAME = "TCLAB_data_periodic_inputs"
 DATA_FOLDER = Path(__file__).parent.parent / "data/"
-IGNORE_IDXS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
+IGNORE_IDXS = {}
 
 
 def output_path(mode: str, counter: int) -> Path:
     return DATA_FOLDER / DATA_FOLDER / f"TCLab{mode}{counter:02d}.mat"
 
 
-def shuffle_datasets(ratio=0, ignore=IGNORE_IDXS):
+def shuffle_datasets(ratio=0.7, ignore=IGNORE_IDXS):
     idxs = [
         Path(s).stem.removeprefix(f"{FILE_NAME}_")
         for s in iglob(f"{FILE_NAME}_*.npz", root_dir=DATA_FOLDER / "raw")

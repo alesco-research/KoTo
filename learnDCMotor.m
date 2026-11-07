@@ -49,8 +49,8 @@ end
 inputLifting = ChebyshevLift(8);
 
 switch "multi"
-    case "one"
-        getPairs = @(Z, U, V) getOneStepPairs(Z, U, V, maxNumberOfPairs=20*800);
+    case "single"
+        getPairs = @(Z, U, V) getSingleStepPairs(Z, U, V, maxNumberOfPairs=20*800);
     case "multi"
         getPairs = @(Z, U, V) getMultiStepWindows(Z, U, V, horizon=20, maxNumberOfWindows=800, maxNumberOfRawWindows=6000);
 end

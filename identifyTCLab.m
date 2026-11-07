@@ -17,7 +17,7 @@ validationData = "TCLabTest02.mat"; % Used to select the MOESP depth
 moespOrders = [3, 4];   % MOESP model orders compared to the ODE
 moespSweep = 1:8;       % MOESP model orders for the order sweep
 moespDepths = 5:5:150;  % [s] Block-Hankel depths L swept per model order
-depthCriterion = 2;     % Error minimized by the depth (1: one-step, 2: multi-step)
+depthCriterion = 2;     % Error minimized by the depth (1: single-step, 2: multi-step)
 warmup = 10;            % Common warm-up window, >= memory of all models
 parameterBounds = struct( ...
     U=[1, 15], Us=[1, 50], m=[1E-3, 1E-2], Q1max=[.5, 1.5], Q2max=[.5, 1.5] ...
@@ -94,7 +94,7 @@ for k = 1:numel(orders)
         err = cell(numel(XValScaled), 1);
         for i = 1:numel(XValScaled)
             err{i} = evaluate( ...
-                model, XValScaled{i}, UValScaled{i}, warmup, oneStep=depthCriterion == 1 ...
+                model, XValScaled{i}, UValScaled{i}, warmup, singleStep=depthCriterion == 1 ...
             );
         end
         meanError = mean([err{:}], 2, "omitnan");
@@ -182,7 +182,7 @@ for k = 1:numel(moespSweep)
         err{i} = evaluate(model, XTestScaled{i}, UTestScaled{i}, warmup);
     end
     sweepErrors(:, k) = mean([err{:}], 2, "omitnan");
-    fprintf("\td = %d: one-step %.4e, multi-step %.4e\n", moespSweep(k), sweepErrors(:, k));
+    fprintf("\td = %d: single-step %.4e, multi-step %.4e\n", moespSweep(k), sweepErrors(:, k));
 end
 nlsfErrors = mean(cell2mat(cellfun(@(err) err(:,:,1), scaledStateError(:)', UniformOutput=0)), 2, "omitnan");
 
@@ -190,8 +190,8 @@ nlsfErrors = mean(cell2mat(cellfun(@(err) err(:,:,1), scaledStateError(:)', Unif
 fprintf("\n[6] Plotting...\n");
 [fig, axs] = plotTrajectories( ...
     scaledStateError, trajectoryOptions(labels={
-        ["One-Step", "$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"];
-        ["Multi-Step", "$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$"]
+        ["Single-Step", "Error $[^\circ$C]"];
+        ["Multi-Step", "Error $[^\circ$C]"]
     }), ...
     name="State-space Prediction Error", ...
     dt = TsTrain ...
@@ -269,7 +269,7 @@ if savePlots
     );
 end
 
-titles = ["One-Step", "Multi-Step"];
+titles = ["Single-Step", "Multi-Step"];
 fig = figure(Name="MOESP Order Sweep");
 tiledlayout(1, 2, TileSpacing="tight", Padding="tight");
 for row = 1:2
@@ -280,7 +280,7 @@ for row = 1:2
     title(titles(row))
     xlabel("Model order $d$")
     if row == 1
-        ylabel("$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$")
+        ylabel("Error $[^\circ$C]")
         legend(["MOESP", modelNames(1)], Location="northeast");
     end
 end
@@ -305,7 +305,7 @@ for k = 1:numel(orders)
 end
 set(gca, YScale="log");
 xlabel("Hankel depth $L$ [s]")
-ylabel("$\mathrm{mean}(\left\|\hat{\bf{x}} \!-\! \bf{x}^\star\right\|)$")
+ylabel(["Multi-Step", "Error $[^\circ$C]"])
 legend("$d=" + orders + "$", Location="northeast", NumColumns=2);
 if savePlots
     exportPlot(fig, "data/moesp_depth_sweep.pdf", ...
@@ -320,16 +320,16 @@ if savePlots
 end
 
 function [err, XPredictedScaled] = evaluate(model, X, U, m, options)
-% EVALUATE  One-step (row 1) and multi-step (row 2) state error norms of a
+% EVALUATE  Single-step (row 1) and multi-step (row 2) state error norms of a
 % warm-started predictor on one scaled test trajectory. The first m samples
 % are used as warm-up, XPredictedScaled holds the multi-step forecast for
-% X(:, m+1:end-1). Set oneStep=false to skip the one-step errors (NaN).
+% X(:, m+1:end-1). Set singleStep=false to skip the single-step errors (NaN).
     arguments
         model (1,1)
         X (:,:)
         U (:,:)
         m (1,1) {mustBeInteger, mustBePositive}
-        options.oneStep (1,1) logical = true
+        options.singleStep (1,1) logical = true
     end
     err = nan(2, size(X, 2));
 
@@ -337,8 +337,8 @@ function [err, XPredictedScaled] = evaluate(model, X, U, m, options)
     XPredictedScaled = model.forecast(U(:, 1:m), X(:, 1:m), U(:, m+1:end));
     err(2, m+1:end-1) = sqrt(sum((XPredictedScaled - X(:, m+1:end-1)).^2, 1));
 
-    % One-step predictions
-    if ~options.oneStep
+    % Single-step predictions
+    if ~options.singleStep
         return
     end
     for t = m+1:size(U, 2)

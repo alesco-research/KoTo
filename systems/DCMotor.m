@@ -32,8 +32,11 @@ classdef DCMotor < SystemBase
 
     properties (Constant)
         stateDim = 2;
-        inputDim = 1;
         outputDim = 2;
+    end
+
+    properties
+        inputDim = 1;
     end
 
     properties (GetAccess=public, SetAccess=immutable)
