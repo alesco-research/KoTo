@@ -376,7 +376,7 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
         title(columnTitles(col));
         xlabel(xLabel);
         if col == 1
-            ylabel("Multi-Step Error $[^\circ$C]");
+            ylabel("Error $[^\circ$C]");
         end
     end
     lgd = legend(axs(1), modelNames, Orientation="horizontal");
@@ -400,10 +400,7 @@ function [fig, lgd] = plotSlices(nu, ny, errors, predictorNames, name, legendLab
         title(predictorNames(k));
         if k > 2, xlabel("Past Outputs [-]"); end
         if mod(k, 2) == 1
-            ylabel({
-                "Multi-Step";
-                "Error $[^\circ$C]"
-            });
+            ylabel({"Multi-Step"; "Error $[^\circ$C]"});
         end
         if ~isempty(ylimits)
             yticks(ylimits);
