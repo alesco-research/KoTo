@@ -1,7 +1,7 @@
-function [A, B] = tcLabLinearized(params)
-    %TCLABLINEARIZED Linearized heater subsystem of TCLab around ambient.
-    %   [A, B] = tcLabLinearized()
-    %   [A, B] = tcLabLinearized(Name=Value)
+function [A, B] = linearizeTCLab(params)
+    %LINEARIZETCLAB Linearized heater subsystem of TCLab around ambient.
+    %   [A, B] = linearizeTCLab()
+    %   [A, B] = linearizeTCLab(Name=Value)
     %
     %   Linearizes the two-heater energy balance (convection, radiation and
     %   conduction between heaters) around the ambient temperature Ta. The

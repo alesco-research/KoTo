@@ -1,7 +1,15 @@
-%% Identify TC-Lab models of different state dimension
-% Compares the 2-state physical model (fitted via nonlinear least squares)
-% against MOESP subspace models. If MOESP needs more than two states to
-% match the data, the measured system has dynamics beyond the ODE.
+%% Identify TC-Lab models of different state dimension (not in the paper)
+%  Data:          Recorded TC-Lab experiments (trainData, validationData,
+%                 testData in data/)
+%  Models:        NLSF   4-state physical ODE model (TCLab), parameters
+%                        fitted by nonlinear least squares
+%                 MOESP  linear subspace models of order d, Hankel depth
+%                        selected on the validation data
+%  Purpose:       If MOESP needs more states than the ODE to match the
+%                 data, the measured system has dynamics beyond the ODE.
+%  Output:        Single- and multi-step error table, prediction error,
+%                 trajectories, MOESP singular values and order/depth
+%                 sweeps (plotPrefix + *.pdf)
 clc, clearvars, close all;
 initWorkspace;
 %#ok<*UNRCH>
@@ -9,6 +17,9 @@ initWorkspace;
 %% Set parameters
 rng(42); % for reproducibility
 savePlots = true;
+plotPrefix = "data/";
+
+% Data
 trainData = "TCLabTrain01.mat";
 testData = "TCLabTest01.mat";
 validationData = "TCLabTest02.mat"; % Used to select the MOESP depth
@@ -94,7 +105,8 @@ for k = 1:numel(orders)
         err = cell(numel(XValScaled), 1);
         for i = 1:numel(XValScaled)
             err{i} = evaluate( ...
-                model, XValScaled{i}, UValScaled{i}, warmup, singleStep=depthCriterion == 1 ...
+                model, XValScaled{i}, UValScaled{i}, warmup, stateScaling, ...
+                singleStep=depthCriterion == 1 ...
             );
         end
         meanError = mean([err{:}], 2, "omitnan");
@@ -102,7 +114,7 @@ for k = 1:numel(orders)
     end
     [minError, best] = min(depthErrors(k, :));
     bestDepth(k) = depthSamples(best);
-    fprintf("\td = %d: L = %d (%g s), validation error %.4e\n", ...
+    fprintf("\td = %d: L = %d (%g s), validation error %.4e degC\n", ...
         orders(k), bestDepth(k), bestDepth(k) * TsTrain, minError);
 end
 depthOf = @(n) bestDepth(orders == n);
@@ -140,35 +152,35 @@ end
 %% Evaluate prediction error
 fprintf("\n[4] Evaluate prediction errors...\n");
 XPredicted = arrayfun(@(len) nan(outputDim, len, numberOfModels), testHorizons, UniformOutput=0);
-scaledStateError = arrayfun(@(len) nan(2, len, numberOfModels), testHorizons, UniformOutput=0);
+stateError = arrayfun(@(len) nan(2, len, numberOfModels), testHorizons, UniformOutput=0);
 for i = 1:numberOfTestRuns
     for j = 1:numberOfModels
-        [scaledStateError{i}(:, :, j), XPredictedScaled] = evaluate( ...
-            models{j}, XTestScaled{i}, UTestScaled{i}, warmup ...
+        [stateError{i}(:, :, j), XPredictedScaled] = evaluate( ...
+            models{j}, XTestScaled{i}, UTestScaled{i}, warmup, stateScaling ...
         );
         XPredicted{i}(:, warmup+1:end-1, j) = stateScaling.unscale(XPredictedScaled);
     end
 end
 
-meanScaledStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), scaledStateError, UniformOutput=0);
+meanStateErrors = cellfun(@(err) mean(err, 2, "omitnan"), stateError, UniformOutput=0);
 
 % Print mean error norms
 plainNames = erase(modelNames, ["$", "_", "{", "}"]);
-fprintf("\tPer-trajectory single-step mean error norm\n\tNr.");
+fprintf("\tPer-trajectory single-step mean error norm [degC]\n\tNr.");
 fprintf("  %16s", plainNames);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
-    fprintf("  %16.4e", meanScaledStateErrors{i}(1,:));
+    fprintf("  %16.4e", meanStateErrors{i}(1,:));
     fprintf("\n");
 end
 
-fprintf("\n\tPer-trajectory multi-step mean error norm\n\tNr.");
+fprintf("\n\tPer-trajectory multi-step mean error norm [degC]\n\tNr.");
 fprintf("  %16s", plainNames);
 fprintf("\n");
 for i = 1:numberOfTestRuns
     fprintf("\t%-3d", i);
-    fprintf("  %16.4e", meanScaledStateErrors{i}(2,:));
+    fprintf("  %16.4e", meanStateErrors{i}(2,:));
     fprintf("\n");
 end
 
@@ -179,17 +191,17 @@ for k = 1:numel(moespSweep)
     model = MOESP(pairs{:}, stateDim=moespSweep(k), L=depthOf(moespSweep(k)));
     err = cell(numberOfTestRuns, 1);
     for i = 1:numberOfTestRuns
-        err{i} = evaluate(model, XTestScaled{i}, UTestScaled{i}, warmup);
+        err{i} = evaluate(model, XTestScaled{i}, UTestScaled{i}, warmup, stateScaling);
     end
     sweepErrors(:, k) = mean([err{:}], 2, "omitnan");
-    fprintf("\td = %d: single-step %.4e, multi-step %.4e\n", moespSweep(k), sweepErrors(:, k));
+    fprintf("\td = %d: single-step %.4e, multi-step %.4e degC\n", moespSweep(k), sweepErrors(:, k));
 end
-nlsfErrors = mean(cell2mat(cellfun(@(err) err(:,:,1), scaledStateError(:)', UniformOutput=0)), 2, "omitnan");
+nlsfErrors = mean(cell2mat(cellfun(@(err) err(:,:,1), stateError(:)', UniformOutput=0)), 2, "omitnan");
 
 %% Plot
 fprintf("\n[6] Plotting...\n");
 [fig, axs] = plotTrajectories( ...
-    scaledStateError, trajectoryOptions(labels={
+    stateError, trajectoryOptions(labels={
         ["Single-Step", "Error $[^\circ$C]"];
         ["Multi-Step", "Error $[^\circ$C]"]
     }), ...
@@ -208,7 +220,7 @@ headerLegend(lgd, ...
     gap=-5 ...
 );
 if savePlots
-    exportPlot(fig, "data/identification_error.pdf", ...
+    exportPlot(fig, plotPrefix + "identification_error.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -239,7 +251,7 @@ headerLegend(lgd, ...
     gap=-5 ...
 );
 if savePlots
-    exportPlot(fig, "data/identification_trajectories.pdf", ...
+    exportPlot(fig, plotPrefix + "identification_trajectories.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -260,7 +272,7 @@ set(gca, YScale="log");
 xlabel("Index $i$")
 ylabel("$\sigma_i / \sigma_1$")
 if savePlots
-    exportPlot(fig, "data/moesp_singular_values.pdf", ...
+    exportPlot(fig, plotPrefix + "moesp_singular_values.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -285,7 +297,7 @@ for row = 1:2
     end
 end
 if savePlots
-    exportPlot(fig, "data/moesp_order_sweep.pdf", ...
+    exportPlot(fig, plotPrefix + "moesp_order_sweep.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -308,7 +320,7 @@ xlabel("Hankel depth $L$ [s]")
 ylabel(["Multi-Step", "Error $[^\circ$C]"])
 legend("$d=" + orders + "$", Location="northeast", NumColumns=2);
 if savePlots
-    exportPlot(fig, "data/moesp_depth_sweep.pdf", ...
+    exportPlot(fig, plotPrefix + "moesp_depth_sweep.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -319,23 +331,27 @@ if savePlots
     );
 end
 
-function [err, XPredictedScaled] = evaluate(model, X, U, m, options)
-% EVALUATE  Single-step (row 1) and multi-step (row 2) state error norms of a
-% warm-started predictor on one scaled test trajectory. The first m samples
-% are used as warm-up, XPredictedScaled holds the multi-step forecast for
-% X(:, m+1:end-1). Set singleStep=false to skip the single-step errors (NaN).
+function [err, XPredictedScaled] = evaluate(model, X, U, m, scaling, options)
+% EVALUATE  Single-step (row 1) and multi-step (row 2) output error norms in
+% physical units (°C) of a warm-started predictor on one scaled test
+% trajectory. The first m samples are used as warm-up, XPredictedScaled
+% holds the scaled multi-step forecast for X(:, m+1:end-1). scaling maps
+% physical to scaled outputs. Set singleStep=false to skip the single-step
+% errors (NaN).
     arguments
         model (1,1)
         X (:,:)
         U (:,:)
         m (1,1) {mustBeInteger, mustBePositive}
+        scaling (1,1) Scale
         options.singleStep (1,1) logical = true
     end
     err = nan(2, size(X, 2));
+    errorNorm = @(XHat, XTrue) vecnorm(scaling.unscale(XHat) - scaling.unscale(XTrue), 2, 1);
 
     % Multi-step predictions
     XPredictedScaled = model.forecast(U(:, 1:m), X(:, 1:m), U(:, m+1:end));
-    err(2, m+1:end-1) = sqrt(sum((XPredictedScaled - X(:, m+1:end-1)).^2, 1));
+    err(2, m+1:end-1) = errorNorm(XPredictedScaled, X(:, m+1:end-1));
 
     % Single-step predictions
     if ~options.singleStep
@@ -343,6 +359,6 @@ function [err, XPredictedScaled] = evaluate(model, X, U, m, options)
     end
     for t = m+1:size(U, 2)
         xNextScaled = model.forecast(U(:, t-m:t-1), X(:, t-m:t-1), U(:, t));
-        err(1, t) = sqrt(sum((xNextScaled - X(:, t)).^2, 1));
+        err(1, t) = errorNorm(xNextScaled, X(:, t));
     end
 end

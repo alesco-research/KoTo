@@ -1,17 +1,19 @@
 %% Learn data-driven predictors for the simulated TC-Lab with fan
-%  Plant (TCLabFan):     u1 drives the heater, u2 drives a cooling fan
-%                        (state-input coupling). Data are simulated by
-%                        generateTCLabFanData (multisine inputs, random
-%                        initial temperatures in [20, 30] °C).
-%  State (IODelayEmbedding):  q_t = [x_t; ...; x_{t-ny+1}; u_{t-1}; ...; u_{t-nu}]
-%  Lifted state:         z_t = [1; q_t]          (liftType = "affine")
-%  Predictors:           Linear    z+ = A z + B u
-%                        Bilinear  z+ = A z + B u + N (u (x) z)
-%                        GeKo      z+ = K (z (x) v),  v = [1; u]
-%                        KCF       z+ = A z + A12 (v (x) [1; x_t])
-%                        Willems  fundamental lemma, memory = ny samples
-%  Embedding lengths and ridge weights were selected by trajectory-wise
-%  4-fold cross-validation on the training data (see README.pdf).
+%  Data:          Simulated by generateTCLabFanData from TCLab(fanSwitch="on"):
+%                 u1, u2 drive the heaters, u3 drives a cooling fan that
+%                 multiplies the temperature difference to ambient
+%                 (state-input coupling)
+%  State:         q_t = [y_t; ...; y_{t-ny}; u_{t-1}; ...; u_{t-nu}]  (IODelayEmbedding)
+%  Lifted state:  z_t = [1; q_t]  (liftType = "affine")
+%  Predictors:    Linear    z+ = A z + B u
+%                 Bilinear  z+ = A z + B u + N (u (x) z)
+%                 GeKo      z+ = K (z (x) v),  v = [1; u]
+%                 KCF       z+ = A z + A12 (u (x) [1; y_t])
+%                 Willems   fundamental lemma, memory = ny + 1 samples
+%  Errors:        Mean error norms in °C over t >= evaluationStart,
+%                 averaged over the test runs
+%  Output:        Single- and multi-step error table, state trajectories,
+%                 state-space error and phase portrait (plotPrefix + *.pdf)
 clc, clearvars, close all;
 initWorkspace;
 %#ok<*UNRCH>
@@ -31,15 +33,15 @@ runLength = 400; % [samples]
 
 % Embedding and lifting
 numberOfOutputs = 20;  % past temperatures in the state [samples]
-numberOfInputs = 20;   % past heater inputs in the state [samples]
+numberOfInputs = 10;   % past heater and fan inputs in the state [samples]
 liftType = "affine";   % "affine": z = [1; q], "rff": z = [1; q; random Fourier features]
 
 % Ridge weights per predictor (cross-validated)
 gamma = struct(Linear=1E-6, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4, Willems=0);
 
 % Willems fundamental lemma
-flMemory = numberOfOutputs; % past samples fixing the initial condition
-flHorizon = 40;             % samples predicted per block
+flMemory = numberOfOutputs + 1; % past samples fixing the initial condition
+flHorizon = 40;                 % samples predicted per block
 
 % Errors are averaged over t >= evaluationStart (t = 0 is the first sample)
 evaluationStart = 40; % [samples]
@@ -93,9 +95,9 @@ dataLabels = {
 inputLabels = {
     ["$q_1$", "[\%]"];
     ["$q_2$", "[\%]"];
-    ["Fan", "[-]"]
+    ["$u_{\mathrm{fan}}$", "[\%]"]
 };
-%%
+
 if plotTrainData
     fig = plotTrajectories( ...
         XTrain, trajectoryOptions(labels=dataLabels), ...
@@ -177,14 +179,15 @@ for i = 1:numberOfTestRuns
     [x, u] = deal(XTestScaled{i}, UTestScaled{i});
     [N, T] = deal(size(x, 2), size(u, 2));
     XPredictedScaled = nan(outputDim, N, numberOfModels);
-    XOneStepScaled = nan(outputDim, N, numberOfModels);
+    XSingleStepScaled = nan(outputDim, N, numberOfModels);
 
-    % Evaluate Willems
-    m = fl.memory;
-    if T > m
-        XPredictedScaled(:, m+1:T, 1) = fl.forecast(u(:, 1:m), x(:, 1:m), u(:, m+1:T));
-        for t = m+1:T
-            XOneStepScaled(:, t, 1) = fl.forecast(u(:, t-m:t-1), x(:, t-m:t-1), u(:, t));
+    % Evaluate Willems, warm-started on the m samples up to y_r (column
+    % t0 = r+1) like the Koopman rollouts, which start from y_r
+    [m, t0] = deal(fl.memory, memory + 1);
+    if T > t0
+        XPredictedScaled(:, t0+1:T, 1) = fl.forecast(u(:, t0-m+1:t0), x(:, t0-m+1:t0), u(:, t0+1:T));
+        for t = t0+1:T
+            XSingleStepScaled(:, t, 1) = fl.forecast(u(:, t-m:t-1), x(:, t-m:t-1), u(:, t));
         end
     end
 
@@ -197,16 +200,16 @@ for i = 1:numberOfTestRuns
         end
         ZPredicted = predictors{k}.rollout(ZTest{i}(:, 1), inputs);
         XPredictedScaled(:, memory+1:N, k+1) = embedding.unembed(stateLifting.project(ZPredicted));
-        ZOneStep = predictors{k}.predict(ZTest{i}(:, 1:end-1), inputs);
-        XOneStepScaled(:, memory+2:N, k+1) = embedding.unembed(stateLifting.project(ZOneStep));
+        ZSingleStep = predictors{k}.predict(ZTest{i}(:, 1:end-1), inputs);
+        XSingleStepScaled(:, memory+2:N, k+1) = embedding.unembed(stateLifting.project(ZSingleStep));
     end
 
     % Errors in °C
     unscaleAll = @(X) reshape(stateScaling.unscale(reshape(X, outputDim, [])), outputDim, N, numberOfModels);
     XPredicted{i} = unscaleAll(XPredictedScaled);
-    XOneStep = unscaleAll(XOneStepScaled);
+    XSingleStep = unscaleAll(XSingleStepScaled);
     stateError{i} = [
-        vecnorm(XOneStep - XTest{i}, 2, 1);
+        vecnorm(XSingleStep - XTest{i}, 2, 1);
         vecnorm(XPredicted{i} - XTest{i}, 2, 1)
     ];
 

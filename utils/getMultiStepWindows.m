@@ -6,7 +6,7 @@ function [Yout, Zout, Wout] = getMultiStepWindows(Z, W, options)
     %
     %   Extracts all windows of HORIZON steps, clusters them with k-means on
     %   the stacked [start; mid; end] states, keeps the window closest to
-    %   each cluster center, and returns the one-step pairs of those windows.
+    %   each cluster center, and returns the single-step pairs of those windows.
     %
     %   Inputs:
     %     Z   Cell vector, one entry per trajectory. Z{i} is n-by-(T_i+1).
@@ -27,13 +27,13 @@ function [Yout, Zout, Wout] = getMultiStepWindows(Z, W, options)
     %     Wout  (Repeating, one per Wj.) mj-by-(K*horizon) inputs.
     %
     %     K <= maxNumberOfWindows (duplicates are removed). Yout(:,t) is the
-    %     successor of Zout(:,t) under Wout{j}(:,t) Rows are ordered
+    %     successor of Zout(:,t) under Wout{j}(:,t). Columns are ordered
     %     window by window, each in chronological order.
     %
     %   Note: Random result; set rng for reproducibility. Requires the
     %   Statistics and Machine Learning Toolbox.
     %
-    %   See also getOneStepPairs, kmeans, dsearchn.
+    %   See also getSingleStepPairs, kmeans, dsearchn.
     arguments (Input)
         Z (:,:) cell {mustBeVector};
     end

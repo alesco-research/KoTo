@@ -1,17 +1,21 @@
 classdef GeKoKoopman < KoopmanBase
-    %GeKoKoopman Model y = K*kron(z,v), ridge-fitted.
+    %GEKOKOOPMAN Generalized Koopman (GeKo) predictor y = K*kron(z,v).
     %
-    %   obj = GeKoKoopman(Name=Value, ...)
-    %     lifted features.
-    %     useMultiStepWindows (true)  Pair selection mode:
-    %       true : requires horizon, maxNumberOfWindows;
-    %              optional maxNumberOfRawWindows. Expressiv windows are 
-    %              chosen by k-means on [start; mid; end] states.
-    %       false: requires maxNumberOfPairs (random one-step pairs).
+    %   obj = GeKoKoopman(Y, Z, V, gamma=0)
+    %     Y, Z   nz-by-P successor and current lifted states.
+    %     V      nv-by-P lifted inputs, Y(:,k) follows Z(:,k) under V(:,k).
+    %     gamma  Ridge regularization weight (default 0).
+    %     Fits K by ridge regression on the regressors kron(Z,V)
+    %     (column-wise Kronecker product). For V = [1; U] and a state
+    %     lifting that contains a constant, this equals BilinearKoopman.
     %
     %   y = predict(obj, z, v)
-    %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
-    %     z, v must match stateDim and inputDim.
+    %     Single-step prediction; z, v must match stateDim and inputDim.
+    %
+    %   normK = getOperatorNorm(obj)
+    %     Frobenius norm of K (also printed).
+    %
+    %   See also KoopmanBase, getSingleStepPairs.
 
     properties (SetAccess=immutable)
         K (:,:) {mustBeNumeric} = [];
@@ -45,7 +49,7 @@ classdef GeKoKoopman < KoopmanBase
                 obj (1,1) GeKoKoopman;
             end
             normK = norm(obj.K, "fro");
-            fprintf("Geko:\t ||K||_F = %.4e\n", normK);
+            fprintf("GeKo:\t ||K||_F = %.4e\n", normK);
         end
     end
 end

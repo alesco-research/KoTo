@@ -1,7 +1,7 @@
 classdef MOESP
 %MOESP Subspace identification of a linear state-space model.
 %   Identifies (A, B, C, D) from input-output data with the MOESP
-%   algorithm and provides one-step prediction and warm-started forecasting.
+%   algorithm and provides single-step prediction and warm-started forecasting.
 %
 %   obj = MOESP(Y1, U1, Y2, U2, ..., L=100, gamma=0.9, stateDim=[])
 %     Yi        ny-by-N_i output trajectory.

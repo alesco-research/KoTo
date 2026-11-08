@@ -1,5 +1,5 @@
 classdef SystemBase
-    %SystemBase Abstract base class for nonlinear systems simulated via ODE45.
+    %SYSTEMBASE Abstract base class for nonlinear systems simulated via ODE45.
     %   Models dx/dt = f(x,u) with a zero-order hold on the input and
     %   optional additive Gaussian process and measurement noise. Subclasses
     %   define the constant properties stateDim and outputDim, the property

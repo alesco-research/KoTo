@@ -1,18 +1,25 @@
 classdef KCFKoopman < KoopmanBase
-    %KCFKOOPMAN Input-state separable KCF (Haseli & Cortes 2025):
-    %   y = A11*z + A12*kron(v_eff, z(coupleIdx)). 
+    %KCFKOOPMAN Koopman control family (KCF) predictor in input-state
+    %   separable form, y = A11*z + A12*kron(v(vKeep), z(couplingIdxs)).
     %
-    %   obj = KCFKoopman(Name=Value, ...)
-    %     lifted features.
-    %     useMultiStepWindows (true)  Pair selection mode:
-    %       true : requires horizon, maxNumberOfWindows;
-    %              optional maxNumberOfRawWindows. Expressiv windows are 
-    %              chosen by k-means on [start; mid; end] states.
-    %       false: requires maxNumberOfPairs (random one-step pairs).
+    %   obj = KCFKoopman(Y, Z, V, couplingIdxs=1:nz, gamma=0)
+    %     Y, Z          nz-by-P successor and current lifted states.
+    %     V             nv-by-P lifted inputs, Y(:,k) follows Z(:,k) under V(:,k).
+    %     couplingIdxs  Rows of z coupled with the input, i.e. the
+    %                   selection z^c = S*z (default: all rows).
+    %     gamma         Ridge regularization weight (default 0).
+    %     Rows of V that are constant in the training data (e.g. the
+    %     constant of a polynomial input lifting) are dropped from the
+    %     coupling term; vKeep marks the retained rows.
     %
     %   y = predict(obj, z, v)
-    %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
-    %     z, v must match stateDim and inputDim.
+    %     Single-step prediction; z, v must match stateDim and inputDim,
+    %     and the dropped rows of v must stay constant.
+    %
+    %   [normA11, normA12] = getOperatorNorm(obj)
+    %     Frobenius norms of A11 and A12 (also printed).
+    %
+    %   See also KoopmanBase, getSingleStepPairs.
 
     properties (SetAccess=immutable)
         A11 (:,:) {mustBeNumeric} = [];
@@ -34,8 +41,8 @@ classdef KCFKoopman < KoopmanBase
             ci = options.couplingIdxs;
             if max(ci) > nz
                 error( ...
-                    "Koopman:InvalidCoupleIdx", ...
-                    "coupleIdx max (%d) exceeds lift dimension %d.", ...
+                    "KoopmanBase:InvalidCouplingIdxs", ...
+                    "max(couplingIdxs) (%d) exceeds the lifted state dimension %d.", ...
                     max(ci), nz ...
                 )
             end
@@ -81,7 +88,7 @@ classdef KCFKoopman < KoopmanBase
             if ~all(constantInputs)
                 constantIdxs = find(~obj.vKeep);
                 error( ...
-                    "Koopman:InvalidInput", ...
+                    "KoopmanBase:InvalidInput", ...
                     "Input lifting(s) %s were constant during " + ...
                     "training but vary in the supplied data.", ...
                     mat2str(constantIdxs(~constantInputs)) ...

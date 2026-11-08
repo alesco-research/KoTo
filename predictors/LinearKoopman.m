@@ -1,17 +1,19 @@
 classdef LinearKoopman < KoopmanBase
-    %LINEARKOOPMAN Linear model y = A*z + B*u fitted by ridge regression.
+    %LINEARKOOPMAN Linear EDMDc predictor y = A*z + B*u.
     %
-    %   obj = LinearKoopman(Name=Value, ...)
-    %     lifted features.
-    %     useMultiStepWindows (true)  Pair selection mode:
-    %       true : requires horizon, maxNumberOfWindows;
-    %              optional maxNumberOfRawWindows. Expressiv windows are 
-    %              chosen by k-means on [start; mid; end] states.
-    %       false: requires maxNumberOfPairs (random one-step pairs).
+    %   obj = LinearKoopman(Y, Z, U, gamma=0)
+    %     Y, Z   nz-by-P successor and current lifted states.
+    %     U      nu-by-P raw inputs, Y(:,k) follows Z(:,k) under U(:,k).
+    %     gamma  Ridge regularization weight (default 0).
+    %     Fits [A, B] by ridge regression on the regressors [Z; U].
     %
     %   y = predict(obj, z, u)
-    %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
-    %     z, u must match stateDim and inputDim.
+    %     Single-step prediction; z, u must match stateDim and inputDim.
+    %
+    %   [normA, normB] = getOperatorNorm(obj)
+    %     Frobenius norms of A and B (also printed).
+    %
+    %   See also KoopmanBase, getSingleStepPairs.
 
     properties (SetAccess=immutable)
         A (:,:) {mustBeNumeric} = [];

@@ -1,7 +1,7 @@
 classdef (Abstract) LiftBase < handle
     %LIFTBASE Common interface for all feature liftings.
     %   Every concrete lifting (PolynomialLift, ChebyshevLift, KernelLift
-    %   subclasses, CompositeLift, ...) inherits from this class. It
+    %   subclasses, RandomFourierLift) inherits from this class. It
     %   defines the lifting interface and adds a learned linear
     %   projection that maps lifted features back to the original state.
     %

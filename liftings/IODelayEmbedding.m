@@ -1,15 +1,16 @@
 classdef IODelayEmbedding
     %IODELAYEMBEDDING Input-output delay embedding for data-driven predictors.
     %   obj = IODelayEmbedding(outputDim, inputDim, numberOfOutputs, numberOfInputs)
-    %   builds the state from the last numberOfOutputs measured outputs and
-    %   the last numberOfInputs applied inputs,
+    %   builds the state from the current output, the last numberOfOutputs
+    %   past outputs and the last numberOfInputs past inputs,
     %
-    %       q_t = [y_t; y_{t-1}; ...; y_{t-ny+1}; u_{t-1}; ...; u_{t-nu}],
+    %       q_t = [y_t; y_{t-1}; ...; y_{t-ny}; u_{t-1}; ...; u_{t-nu}],
     %
-    %   with ny = numberOfOutputs and nu = numberOfInputs. The input applied
-    %   at time t, u_t, is NOT part of the state; it is the input of the
-    %   one-step map q_{t+1} = F(q_t, u_t). For a linear system of order n
-    %   with ny, nu >= n (observability index) q_t is a state.
+    %   with ny = numberOfOutputs (r_y in the paper) and nu = numberOfInputs
+    %   (r_u in the paper). The input applied at time t, u_t, is NOT part of
+    %   the state; it is the input of the single-step map
+    %   q_{t+1} = F(q_t, u_t). For a linear system of order n with
+    %   ny + 1, nu >= n (observability index) q_t is a state.
     %
     %   [Q, W] = embed(obj, Y, U)
     %       Y is outputDim-by-N (columns are samples), U is inputDim-by-T
@@ -25,13 +26,14 @@ classdef IODelayEmbedding
     %   Properties (read-only):
     %      outputDim, inputDim             - Signal dimensions
     %      numberOfOutputs, numberOfInputs - Past samples in the state
-    %      memory      - First usable sample index minus one, max(ny-1, nu)
-    %      featureDim  - Dimension of q, ny*outputDim + nu*inputDim
+    %      memory      - First usable sample index minus one,
+    %                    r = max(ny, nu)
+    %      featureDim  - Dimension of q, (ny+1)*outputDim + nu*inputDim
 
     properties (SetAccess=immutable)
         outputDim (1,1) {mustBeInteger, mustBePositive} = 1;
         inputDim (1,1) {mustBeInteger, mustBePositive} = 1;
-        numberOfOutputs (1,1) {mustBeInteger, mustBePositive} = 1;
+        numberOfOutputs (1,1) {mustBeInteger, mustBeNonnegative} = 0;
         numberOfInputs (1,1) {mustBeInteger, mustBeNonnegative} = 0;
         memory (1,1) {mustBeInteger, mustBeNonnegative} = 0;
         featureDim (1,1) {mustBeInteger, mustBePositive} = 1;
@@ -42,15 +44,15 @@ classdef IODelayEmbedding
             arguments
                 outputDim (1,1) {mustBeInteger, mustBePositive};
                 inputDim (1,1) {mustBeInteger, mustBePositive};
-                numberOfOutputs (1,1) {mustBeInteger, mustBePositive};
+                numberOfOutputs (1,1) {mustBeInteger, mustBeNonnegative};
                 numberOfInputs (1,1) {mustBeInteger, mustBeNonnegative};
             end
             obj.outputDim = outputDim;
             obj.inputDim = inputDim;
             obj.numberOfOutputs = numberOfOutputs;
             obj.numberOfInputs = numberOfInputs;
-            obj.memory = max(numberOfOutputs - 1, numberOfInputs);
-            obj.featureDim = numberOfOutputs * outputDim + numberOfInputs * inputDim;
+            obj.memory = max(numberOfOutputs, numberOfInputs);
+            obj.featureDim = (numberOfOutputs + 1) * outputDim + numberOfInputs * inputDim;
         end
 
         function [Q, W] = embed(obj, Y, U)
@@ -64,11 +66,11 @@ classdef IODelayEmbedding
 
             times = obj.memory + 1:size(Y, 2);
             Q = zeros(obj.featureDim, numel(times));
-            for i = 0:ny - 1
+            for i = 0:ny
                 Q(i * p + (1:p), :) = Y(:, times - i);
             end
             for i = 1:nu
-                Q(ny * p + (i - 1) * m + (1:m), :) = U(:, times - i);
+                Q((ny + 1) * p + (i - 1) * m + (1:m), :) = U(:, times - i);
             end
             W = U(:, obj.memory + 1:end);
         end

@@ -1,13 +1,16 @@
 %% Learn data-driven predictors for the TC-Lab
-%  State (IODelayEmbedding):  q_t = [x_t; ...; x_{t-ny+1}; u_{t-1}; ...; u_{t-nu}]
-%  Lifted state:         z_t = [1; q_t]          (liftType = "affine")
-%  Predictors:           Linear    z+ = A z + B u
-%                        Bilinear  z+ = A z + B u + N (u (x) z)
-%                        GeKo      z+ = K (z (x) v),  v = [1; u]
-%                        KCF       z+ = A z + A12 (v (x) [1; x_t])
-%                        Willems  fundamental lemma, memory = ny samples
-%  Embedding lengths and ridge weights were selected by trajectory-wise
-%  4-fold cross-validation on the training data (see README.pdf).
+%  Data:          Recorded TC-Lab experiments (trainData, testData in data/)
+%  State:         q_t = [y_t; ...; y_{t-ny}; u_{t-1}; ...; u_{t-nu}]  (IODelayEmbedding)
+%  Lifted state:  z_t = [1; q_t]  (liftType = "affine")
+%  Predictors:    Linear    z+ = A z + B u
+%                 Bilinear  z+ = A z + B u + N (u (x) z)
+%                 GeKo      z+ = K (z (x) v),  v = [1; u]
+%                 KCF       z+ = A z + A12 (u (x) [1; y_t])
+%                 Willems   fundamental lemma, memory = ny + 1 samples
+%  Errors:        Mean error norms in °C over t >= evaluationStart,
+%                 averaged over the test runs
+%  Output:        Single- and multi-step error table, state trajectories,
+%                 state-space error and phase portrait (plotPrefix + *.pdf)
 clc, clearvars, close all;
 initWorkspace;
 %#ok<*UNRCH>
@@ -29,12 +32,12 @@ numberOfOutputs = 20;  % past temperatures in the state [samples]
 numberOfInputs = 10;   % past heater inputs in the state [samples]
 liftType = "affine";   % "affine": z = [1; q], "rff": z = [1; q; random Fourier features]
 
-% Ridge weights per predictor (cross-validated)
+% Ridge weights per predictor
 gamma = struct(Linear=1E-4, Bilinear=1E-4, GeKo=1E-4, KCF=1E-4, Willems=0);
 
 % Willems fundamental lemma
-flMemory = numberOfOutputs; % past samples fixing the initial condition
-flHorizon = 40;             % samples predicted per block
+flMemory = numberOfOutputs + 1; % past samples fixing the initial condition
+flHorizon = 40;                 % samples predicted per block
 
 % Errors are averaged over t >= evaluationStart (t = 0 is the first sample)
 evaluationStart = 40; % [samples]
@@ -179,11 +182,12 @@ for i = 1:numberOfTestRuns
     XPredictedScaled = nan(outputDim, N, numberOfModels);
     XSingleStepScaled = nan(outputDim, N, numberOfModels);
 
-    % Evaluate Willems
-    m = fl.memory;
-    if T > m
-        XPredictedScaled(:, m+1:T, 1) = fl.forecast(u(:, 1:m), x(:, 1:m), u(:, m+1:T));
-        for t = m+1:T
+    % Evaluate Willems, warm-started on the m samples up to y_r (column
+    % t0 = r+1) like the Koopman rollouts, which start from y_r
+    [m, t0] = deal(fl.memory, memory + 1);
+    if T > t0
+        XPredictedScaled(:, t0+1:T, 1) = fl.forecast(u(:, t0-m+1:t0), x(:, t0-m+1:t0), u(:, t0+1:T));
+        for t = t0+1:T
             XSingleStepScaled(:, t, 1) = fl.forecast(u(:, t-m:t-1), x(:, t-m:t-1), u(:, t));
         end
     end

@@ -1,17 +1,20 @@
 classdef BilinearKoopman < KoopmanBase
-    %BILINEARKOOPMAN Bilinear model y = A*z + B*u + N*kron(u,z), ridge-fitted.
+    %BILINEARKOOPMAN Bilinear EDMDc predictor y = A*z + B*u + N*kron(u,z).
     %
-    %   obj = BilinearKoopman(Name=Value, ...)
-    %     lifted features.
-    %     useMultiStepWindows (true)  Pair selection mode:
-    %       true : requires horizon, maxNumberOfWindows;
-    %              optional maxNumberOfRawWindows. Expressiv windows are 
-    %              chosen by k-means on [start; mid; end] states.
-    %       false: requires maxNumberOfPairs (random one-step pairs).
+    %   obj = BilinearKoopman(Y, Z, U, gamma=0)
+    %     Y, Z   nz-by-P successor and current lifted states.
+    %     U      nu-by-P raw inputs, Y(:,k) follows Z(:,k) under U(:,k).
+    %     gamma  Ridge regularization weight (default 0).
+    %     Fits [A, B, N] by ridge regression on the regressors
+    %     [Z; U; kron(U,Z)] (column-wise Kronecker product).
     %
     %   y = predict(obj, z, u)
-    %     Requires a fitted model (Koopman:OperatorUndefined otherwise).
-    %     z, u must match stateDim and inputDim.
+    %     Single-step prediction; z, u must match stateDim and inputDim.
+    %
+    %   [normA, normB, normN] = getOperatorNorm(obj)
+    %     Frobenius norms of A, B and N (also printed).
+    %
+    %   See also KoopmanBase, getSingleStepPairs.
 
     properties (SetAccess=immutable)
         A (:,:) {mustBeNumeric} = [];
@@ -56,7 +59,7 @@ classdef BilinearKoopman < KoopmanBase
             normB = norm(obj.B, "fro");
             normN = norm(obj.N, "fro");
             fprintf( ...
-                "Bilinear:" + ...
+                "Bilinear:\t " + ...
                 "||A||_F = %.4e,   ||B||_F = %.4e,   ||N||_F = %.4e\n", ...
                 normA, normB, normN ...
             );

@@ -1,4 +1,14 @@
-%% Learn Koopman Operator for a DC-Motor
+%% Learn data-driven predictors for a simulated DC motor (not in the paper)
+%  Data:          Simulated by DCMotor (full state measured, multisine inputs)
+%  State:         x_t = [I_t; omega_t]  (no delay embedding)
+%  Lifted state:  z_t = Psi(x_t)  (kernelType = "poly", "rbf", "rq" or "matern")
+%  Lifted input:  v_t = Chebyshev polynomials of u_t up to degree 8
+%  Predictors:    Linear    z+ = A z + B u
+%                 Bilinear  z+ = A z + B u + N (u (x) z)
+%                 GeKo      z+ = K (z (x) v)
+%                 KCF       z+ = A z + A12 (v (x) z^c)
+%  Output:        Mean error table, feature-space and state-space error,
+%                 state trajectories and phase portrait (plotPrefix + *.pdf)
 clc, clearvars, close all;
 initWorkspace;
 %#ok<*UNRCH>
@@ -9,6 +19,7 @@ savePlots = false;
 saveModels = false;
 plotTrainData = true;
 plotTestData = true;
+plotPrefix = "data/dcmotor_";
 
 % Plotting parameters
 margin = 0;
@@ -126,8 +137,8 @@ V = cell2mat(VTrain');
 reprojectionError = stateLifting.fitProjection(X, gamma=1e-4);
 fprintf("\tReprojection Error: %.4f\n", reprojectionError);
 
-%% Fit Koopman controllers
-fprintf("\n[3] Fit Koopman controllers...\n");
+%% Fit predictors
+fprintf("\n[3] Fit predictors...\n");
 [Ypairs, Zpairs, Upairs, Vpairs] = getPairs(ZTrain, UTrainScaled, VTrain);
 
 predictors = cell(4, 1);
@@ -155,23 +166,6 @@ end
 
 predictors{4} = KCFKoopman(Ypairs, Zpairs, Vpairs, couplingIdxs=kcfCouplingIdxs, gamma=1E-4);
 
-if exist("M_ms", "var")
-    if all([
-        all(predictors{1}.A == M_ms{1}.A, "all");
-        all(predictors{1}.B == M_ms{1}.B, "all");
-        all(predictors{2}.A == M_ms{2}.A, "all");
-        all(predictors{2}.B == M_ms{2}.B, "all");
-        all(predictors{2}.N == M_ms{2}.N, "all");
-        all(predictors{3}.K == M_ms{3}.K, "all");
-        all(predictors{4}.A11 == M_ms{4}.A11, "all");
-        all(predictors{4}.A12 == M_ms{4}.A12, "all");
-    ])
-        fprintf("\tOperators match Lazar's operators.\n\n");
-    else
-        fprintf("\tOperators do NOT match Lazar's operators.\n\n");
-    end
-end
-
 %% Evaluate operator norms
 fprintf("\t%s", evalc("predictors{1}.getOperatorNorm();"))
 fprintf("\t%s", evalc("predictors{2}.getOperatorNorm();"))
@@ -182,7 +176,7 @@ fprintf("\t%s", evalc("predictors{4}.getOperatorNorm();"))
 fprintf("\n[4] Evaluating prediction error...\n");
 testHorizon = 300;
 numberOfTestRuns = 10;
-randperm(size(Z, 2), size(Z, 2)); % to reproduce Lazar's rng state
+randperm(size(Z, 2), size(Z, 2)); % advances the rng state; kept to reproduce earlier results
 
 testTime = (0:testHorizon) * motor.Ts;
 testFreqs = [2, 5, 11.5, 23.5];
@@ -261,7 +255,7 @@ xlabel("Time [s]")
 ylabel("$\left\|\hat{\bf{z}} - \bf{z}^\star\right\|$")
 legend(predictorNames, Location="best")
 if savePlots
-    exportPlot(gcf(), 'data/feature_space_error.pdf', ...
+    exportPlot(gcf(), plotPrefix + "feature_space_error.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -281,7 +275,7 @@ xlabel("Time [s]")
 ylabel("$\left\|\hat{\bf{x}} - \bf{x}^\star\right\|$")
 legend(predictorNames, Location="best")
 if savePlots
-    exportPlot(gcf(), 'data/state_space_error.pdf', ...
+    exportPlot(gcf(), plotPrefix + "state_space_error.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -312,7 +306,7 @@ xlabel("Time [s]")
 ylabel("$x_2$ [rad / s]")
 legend([predictorNames(:); "True"], Location="best")
 if savePlots
-    exportPlot(gcf(), 'data/state_trajectories.pdf', ...
+    exportPlot(gcf(), plotPrefix + "state_trajectories.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...
@@ -332,7 +326,7 @@ xlabel("$x_1$ [A]")
 ylabel("$x_2$ [rad / s]")
 legend([predictorNames(:); "True"; "$x_0$"], Location="best")
 if savePlots
-    exportPlot(gcf(), 'data/phase_portrait.pdf', ...
+    exportPlot(gcf(), plotPrefix + "phase_portrait.pdf", ...
         width=width, ...
         height=height, ...
         margin=margin, ...

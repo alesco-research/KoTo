@@ -24,9 +24,9 @@ classdef TCLab < SystemBase
     %   [0, 100]. inputDim (3 or 2) follows fanSwitch.
     %
     %   Properties (defaults):
-    %      Ta 23 °C, U 5 W/m^2-K, dU 95 W/m^2-K (full fan: U -> 100 W/m^2-K),
+    %      Ta 23 °C, U 5 W/m^2-K, dU 150 W/m^2-K (full fan: U -> 155 W/m^2-K),
     %      Us 24 W/m^2-K, m 4E-3 kg, Cp 500 J/kg-K, A 1E-3 m^2,
-    %      As 2E-4 m^2, Q1max 1 W, Q2max 0.75 W, emissivity 0.9,
+    %      As 2E-4 m^2, Q1max 2 W, Q2max 1.5 W, emissivity 0.9,
     %      tauSensor 20 s, fanSwitch "off", Ts 1 s.
     %
     %   See also SystemBase, generateTCLabFanData.

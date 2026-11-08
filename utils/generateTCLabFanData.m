@@ -16,7 +16,8 @@ function [XTrain, UTrain, XTest, UTest, Ts] = generateTCLabFanData(options)
 %
 %   generateTCLabFanData(Name=Value) changes the defaults:
 %     numberOfTrainRuns (30), numberOfTestRuns (6), runLength (400),
-%     noiseCov (0.05 * eye(2) °C^2), seed (42), Ts (1 s).
+%     noiseCov (0.05^2 * eye(2) °C^2, i.e. 0.05 °C standard deviation),
+%     seed (42), Ts (1 s).
     arguments
         options.numberOfTrainRuns (1,1) {mustBeInteger, mustBePositive} = 30;
         options.numberOfTestRuns (1,1) {mustBeInteger, mustBePositive} = 6;

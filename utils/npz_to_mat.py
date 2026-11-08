@@ -22,7 +22,7 @@ IGNORE_IDXS = {}
 
 
 def output_path(mode: str, counter: int) -> Path:
-    return DATA_FOLDER / DATA_FOLDER / f"TCLab{mode}{counter:02d}.mat"
+    return DATA_FOLDER / f"TCLab{mode}{counter:02d}.mat"
 
 
 def shuffle_datasets(ratio=0.7, ignore=IGNORE_IDXS):

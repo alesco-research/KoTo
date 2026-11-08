@@ -1,9 +1,9 @@
-function [Yout, Zout, Wout] = getOneStepPairs(Z, W, options)
-    %GETONESTEPPAIRS Collect one-step transition pairs from trajectories.
-    %   [Y, Z, W1, ..., WN] = getOneStepPairs(Z, W1, ..., WN)
-    %   [___] = getOneStepPairs(___, maxNumberOfPairs=K)
+function [Yout, Zout, Wout] = getSingleStepPairs(Z, W, options)
+    %GETSINGLESTEPPAIRS Collect single-step transition pairs from trajectories.
+    %   [Y, Z, W1, ..., WN] = getSingleStepPairs(Z, W1, ..., WN)
+    %   [___] = getSingleStepPairs(___, maxNumberOfPairs=K)
     %
-    %   Concatenates all one-step transitions and, if there are more than
+    %   Concatenates all single-step transitions and, if there are more than
     %   K, keeps K of them chosen at random.
     %
     %   Inputs:

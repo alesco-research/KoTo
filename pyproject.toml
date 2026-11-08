@@ -1,7 +1,7 @@
 [project]
-name = "koopman-tutorial"
+name = "koto"
 version = "0.1.0"
-description = "This is the TCLab tutorial on Koopman control methods."
+description = "KoTo.M – A Koopman toolbox for MATLAB"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
