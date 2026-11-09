@@ -268,7 +268,7 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
     %   (single-step, multi-step mean error norm).
     fig = figure(Name=name);
     tiledlayout(fig, 1, 2, TileSpacing="tight", Padding="tight");
-    linestyleorder(fig, lineStyles("mixedstyles"))
+    linestyleorder(fig, ["-", "-", "--", "--"])
     colororder(fig, colorPalette("gem12"))
 
     columnTitles = ["Single-Step", "Multi-Step"];
@@ -280,8 +280,8 @@ function [fig, lgd] = plotSweep(x, errors, modelNames, xLabel, name)
         plot(x, reshape(errors(col, :, :), numberOfModels, [])', Marker="o");
         set(gca, YScale="log", YLimitMethod="tight");
 
-        limits = ylim;
-        ylim([limits(1), 10^round(log10(limits(1)) + 1)]);
+        % limits = ylim;
+        % ylim([limits(1), 10^round(log10(limits(1)) + 1)]);
         title(columnTitles(col));
         xlabel(xLabel);
         if col == 1
